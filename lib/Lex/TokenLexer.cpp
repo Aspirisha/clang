@@ -494,6 +494,16 @@ bool TokenLexer::Lex(Token &Tok) {
   AtStartOfLine = false;
   HasLeadingSpace = false;
 
+
+  //andy
+  Tok.setKind(tok::TokenKind::numeric_constant);
+  char *c = new char[2];
+  c[0] = '1';
+  c[1] = 0;
+  Tok.setLiteralData(c);
+  Tok.setLength(1);
+  // end andy
+
   // Handle recursive expansion!
   if (!Tok.isAnnotation() && Tok.getIdentifierInfo() != nullptr) {
     // Change the kind of this identifier to the appropriate token kind, e.g.
