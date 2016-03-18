@@ -99,6 +99,11 @@ class TokenLexer {
   /// should not be subject to further macro expansion.
   bool DisableMacroExpansion : 1;
 
+  // andy
+  bool ReadingFromExpansionCache : 1;
+  unsigned ReadingCachePos;
+  size_t CacheSize;
+
   TokenLexer(const TokenLexer &) = delete;
   void operator=(const TokenLexer &) = delete;
 public:
@@ -151,12 +156,16 @@ public:
   bool isParsingPreprocessorDirective() const;
 
 private:
+  bool LexCachedExpansion(Token &Tok);
+
   void destroy();
 
   /// isAtEnd - Return true if the next lex call will pop this macro off the
   /// include stack.
   bool isAtEnd() const {
-    return CurToken == NumTokens;
+    return ((!ReadingFromExpansionCache && CurToken == NumTokens)
+            || (ReadingFromExpansionCache && ReadingCachePos
+                                            == CacheSize));
   }
 
   /// PasteTokens - Tok is the LHS of a ## operator, and CurToken is the ##
@@ -198,6 +207,7 @@ private:
                                     Preprocessor &PP);
 
   void PropagateLineStartLeadingSpaceInfo(Token &Result);
+  void makeCachedExpansion(MacroInfo *MI);
 };
 
 }  // end namespace clang

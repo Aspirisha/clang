@@ -663,6 +663,7 @@ bool Preprocessor::HandleIdentifier(Token &Identifier) {
         if (!MI->isFunctionLike() || isNextPPTokenLParen())
           return HandleMacroExpandedIdentifier(Identifier, MD);
       } else {
+        llvm::errs() << "no expansion\n";
         // C99 6.10.3.4p2 says that a disabled macro may never again be
         // expanded, even if it's in a context where it could be expanded in the
         // future.

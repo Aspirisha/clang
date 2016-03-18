@@ -2269,6 +2269,10 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
              II->isStr("__unsafe_unretained") ||
              II->isStr("__autoreleasing");
     };
+
+    //TODO here steal all dependent on OtherMI MIs, for now they depend on
+    // newly defined MacroInfo! Also, propagate that all of them are not cached now
+
    if (getLangOpts().ObjC1 &&
         SourceMgr.getFileID(OtherMI->getDefinitionLoc())
           == getPredefinesFileID() &&

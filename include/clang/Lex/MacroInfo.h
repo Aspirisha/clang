@@ -20,6 +20,7 @@
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Allocator.h"
 #include <cassert>
 
@@ -110,6 +111,16 @@ class MacroInfo {
 
   /// \brief Whether this macro was used as header guard.
   bool UsedForHeaderGuard : 1;
+
+  // andy: if currently expansion cache is valid. Currently only
+  // for function-like macroses
+  bool IsExpansionCached : 1;
+  bool IsCachedWithoutExpansion : 1;
+  SmallVector<Token, 8> CachedExpansion;
+  SmallVector<Token, 8> NotExpandedCacheTokens;
+  llvm::SmallPtrSet<MacroInfo*, 8> DependsOnMIs;
+  llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
+
 
   // Only the Preprocessor gets to create and destroy these.
   MacroInfo(SourceLocation DefLoc);
@@ -249,8 +260,65 @@ public:
     ReplacementTokens.push_back(Tok);
   }
 
-  /// \brief Return true if this macro is enabled.
-  ///
+
+
+  // andy
+  typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
+  void addTokenToExpansionCache(const Token &Tok);
+  void addTokensToExpansionCache(tokens_iterator begin, tokens_iterator end);
+  void addTokenToUnexpandedCache(const Token &Tok);
+  void setExpansionCacheValid(bool valid);
+  void setNoExpansionCacheValid(bool valid);
+  void propagateExpansion() const;
+  void relexRecursivelyFromCache();
+  static bool addDependency(MacroInfo *depending, MacroInfo *master);
+  static bool removeDependency(MacroInfo *depending, MacroInfo *master);
+
+
+  bool isExpansionCacheValid() const
+  {
+    return IsExpansionCached;
+  }
+
+  bool isCachedWithoutExpansion() const
+  {
+    return IsCachedWithoutExpansion;
+  }
+
+  tokens_iterator expansion_tokens_begin() const
+  {
+    return CachedExpansion.begin();
+  }
+
+  tokens_iterator expansion_tokens_end() const
+  { return CachedExpansion.end(); }
+
+  tokens_iterator no_expansion_tokens_begin() const
+  {
+    return NotExpandedCacheTokens.begin();
+  }
+
+  tokens_iterator no_expansion_tokens_end() const
+  { return NotExpandedCacheTokens.end(); }
+
+  bool cachedExpansionEmpty() const { return CachedExpansion.empty(); }
+  ArrayRef<Token> getExpCache() const { return CachedExpansion; }
+
+  depends_iterator this_depends_on_begin() const
+  { return DependsOnMIs.begin();}
+
+  depends_iterator this_depends_on_end() const
+  { return DependsOnMIs.end();}
+
+  depends_iterator depending_on_this_begin() const
+  { return DependingOnThisMIs.begin();}
+
+  depends_iterator depending_on_this_end() const
+  { return DependingOnThisMIs.end();}
+
+
+
+
   /// In other words, that we are not currently in an expansion of this macro.
   bool isEnabled() const { return !IsDisabled; }
 

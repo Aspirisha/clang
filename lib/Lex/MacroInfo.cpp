@@ -30,7 +30,10 @@ MacroInfo::MacroInfo(SourceLocation DefLoc)
     IsAllowRedefinitionsWithoutWarning(false),
     IsWarnIfUnused(false),
     FromASTFile(false),
-    UsedForHeaderGuard(false) {
+    UsedForHeaderGuard(false),
+    IsExpansionCached(false),
+    IsCachedWithoutExpansion(false)
+{
 }
 
 unsigned MacroInfo::getDefinitionLengthSlow(SourceManager &SM) const {
@@ -242,4 +245,62 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
       sizeof(ModuleMacro) + sizeof(ModuleMacro *) * Overrides.size(),
       llvm::alignOf<ModuleMacro>());
   return new (Mem) ModuleMacro(OwningModule, II, Macro, Overrides);
+}
+
+
+// andy
+void MacroInfo::addTokenToExpansionCache(const Token &Tok)
+{
+  CachedExpansion.push_back(Tok);
+}
+
+void MacroInfo::setExpansionCacheValid(bool valid)
+{
+  if (IsExpansionCached == valid)
+    return;
+
+  IsExpansionCached = valid;
+  if (!valid)
+  {
+    CachedExpansion.clear();
+  }
+}
+
+bool MacroInfo::addDependency(MacroInfo *depending, MacroInfo *master)
+{
+  assert(depending && master && "Should not insert nullptr dependecies");
+  bool res1 = depending->DependsOnMIs.insert(master).second;
+  bool res2 = master->DependingOnThisMIs.insert(depending).second;
+  return res1 && res2;
+}
+
+bool MacroInfo::removeDependency(MacroInfo *depending, MacroInfo *master)
+{
+  return (depending->DependsOnMIs.erase(master) &&
+          master->DependingOnThisMIs.erase(depending));
+}
+
+void MacroInfo::addTokenToUnexpandedCache(const Token &Tok)
+{
+  NotExpandedCacheTokens.push_back(Tok);
+}
+
+void MacroInfo::setNoExpansionCacheValid(bool valid)
+{
+  if (valid == IsCachedWithoutExpansion)
+    return;
+  IsCachedWithoutExpansion = valid;
+  if (!valid)
+  {
+    NotExpandedCacheTokens.clear();
+    CachedExpansion.clear();
+    DependsOnMIs.clear();
+    CachedExpansion.clear();
+  }
+}
+
+void MacroInfo::addTokensToExpansionCache(tokens_iterator begin, tokens_iterator end)
+{
+  CachedExpansion.append(begin, end);
+  //llvm::errs() << "now sie is " << CachedExpansion.size() << "\n";
 }
