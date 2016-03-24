@@ -369,7 +369,6 @@ bool Preprocessor::HandleEndOfFile(Token &Result, bool isEndOfMacro) {
   // If this is a #include'd file, pop it off the include stack and continue
   // lexing the #includer file.
   if (!IncludeMacroStack.empty()) {
-
     // If we lexed the code-completion file, act as if we reached EOF.
     if (isCodeCompletionEnabled() && CurPPLexer &&
         SourceMgr.getLocForStartOfFile(CurPPLexer->getFileID()) ==

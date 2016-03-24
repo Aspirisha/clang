@@ -102,7 +102,7 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   HasLeadingSpace = false;
   NextTokGetsSpace = false;
   MacroExpansionStart = SourceLocation();
-
+  ReadingFromExpansionCache = false;
   CacheSize = 0;
   // Set HasLeadingSpace/AtStartOfLine so that the first token will be
   // returned unmodified.
@@ -459,21 +459,14 @@ bool TokenLexer::Lex(Token &Tok) {
     }*/
 
     if (Macro && !Macro->isExpansionCacheValid()) {
-      //Macro->addTokenToUnexpandedCache(Tok);
       makeCachedExpansion(Macro);
-      //Macro->addTokenToExpansionCache(Tok);
-      //Macro->propagateExpansion();
-      //Macro->setExpansionCacheValid(true);
     }
 
     bool result = PP.HandleEndOfTokenLexer(Tok);
-
     return result;
   }
 
-  if (ReadingFromExpansionCache)
-  {
-    //llvm::errs() << "Reading cache!\n";
+  if (ReadingFromExpansionCache) {
     return LexCachedExpansion(Tok);
   }
 
@@ -540,21 +533,8 @@ bool TokenLexer::Lex(Token &Tok) {
   AtStartOfLine = false;
   HasLeadingSpace = false;
 
-
-  //andy
-  /*Tok.setKind(tok::TokenKind::numeric_constant);
-  char *c = new char[2];
-  c[0] = '1';
-  c[1] = 0;
-  Tok.setLiteralData(c);
-  Tok.setLength(1);*/
-  // end andy
-
-
-  if (Macro)
-  {
+  if (Macro) // TODO probably move to Preprocessor::HandleDefineDirective
     Macro->addTokenToUnexpandedCache(Tok);
-  }
 
   // Handle recursive expansion!
   if (!Tok.isAnnotation() && Tok.getIdentifierInfo() != nullptr) {
@@ -572,10 +552,6 @@ bool TokenLexer::Lex(Token &Tok) {
 
     if (!DisableMacroExpansion && II->isHandleIdentifierCase())
     {
-      /*MacroInfo * tmp = PP.getMacroInfo(II);
-      if (tmp && tmp->isExpansionCacheValid())
-        return false;*/
-
       bool result = PP.HandleIdentifier(Tok);
       /*if (tmp && Macro)
       {
@@ -596,7 +572,7 @@ bool TokenLexer::LexCachedExpansion(Token &Tok)
 {
   assert(ReadingCachePos < Macro->getExpCache().size() && "Out of cache bounds");
   Tok = Macro->getExpCache()[ReadingCachePos++];
-  return true;
+  return true; // TODO always true?
 }
 
 /// PasteTokens - Tok is the LHS of a ## operator, and CurToken is the ##
@@ -787,6 +763,8 @@ bool TokenLexer::PasteTokens(Token &Tok) {
 /// 1, otherwise return 0.
 unsigned TokenLexer::isNextTokenLParen() const {
   // Out of tokens?
+  // TODO here need proper answer while using cache
+  llvm::errs() << "TokenLexer::isNextTokenLParen\n";
   if (isAtEnd())
     return 2;
   return Tokens[CurToken].is(tok::l_paren);
@@ -795,6 +773,8 @@ unsigned TokenLexer::isNextTokenLParen() const {
 /// isParsingPreprocessorDirective - Return true if we are in the middle of a
 /// preprocessor directive.
 bool TokenLexer::isParsingPreprocessorDirective() const {
+  // TODO here need proper answer while using cache
+  llvm::errs() << "TokenLexer::isParsingPreprocessorDirective\n";
   return Tokens[NumTokens-1].is(tok::eod) && !isAtEnd();
 }
 
@@ -963,10 +943,10 @@ void TokenLexer::makeCachedExpansion(MacroInfo *MI)
       continue;
     }
 
-
-    //llvm::errs() << "Fine!!\n";
-    MI->addTokensToExpansionCache(m->expansion_tokens_begin(),
+    MI->addTokensToExpansionCache(iter->getFlags(), m->expansion_tokens_begin(),
                                   m->expansion_tokens_end());
+
+    MacroInfo::addDependency(MI, m);
 
   }
   //llvm::errs() << "makeCachedExpansion end\n";

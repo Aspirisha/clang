@@ -124,7 +124,7 @@ class MacroInfo {
 
   // Only the Preprocessor gets to create and destroy these.
   MacroInfo(SourceLocation DefLoc);
-  ~MacroInfo() = default;
+  ~MacroInfo();
 
 public:
   /// \brief Return the location that the macro was defined at.
@@ -265,12 +265,15 @@ public:
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
   void addTokenToExpansionCache(const Token &Tok);
-  void addTokensToExpansionCache(tokens_iterator begin, tokens_iterator end);
+  void addTokensToExpansionCache(unsigned flags, tokens_iterator begin, tokens_iterator end);
   void addTokenToUnexpandedCache(const Token &Tok);
   void setExpansionCacheValid(bool valid);
   void setNoExpansionCacheValid(bool valid);
-  void propagateExpansion() const;
-  void relexRecursivelyFromCache();
+  void clearExpansionCache(bool setCacheInvalid = true)
+  {
+    CachedExpansion.clear();
+    IsExpansionCached = !setCacheInvalid;
+  }
   static bool addDependency(MacroInfo *depending, MacroInfo *master);
   static bool removeDependency(MacroInfo *depending, MacroInfo *master);
 

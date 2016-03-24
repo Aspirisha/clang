@@ -518,6 +518,13 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     Identifier.setFlag(Token::LeadingEmptyMacro);
     PropagateLineStartLeadingSpaceInfo(Identifier);
     ++NumFastMacroExpanded;
+
+    // andy
+    if (!MI->isExpansionCacheValid())
+    {
+      MI->clearExpansionCache(false);
+    }
+
     return false;
   } else if (MI->getNumTokens() == 1 &&
              isTrivialSingleTokenExpansion(MI, Identifier.getIdentifierInfo(),
@@ -566,8 +573,7 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     ++NumFastMacroExpanded;
 
     // TODO create expansion
-    if (!MI->isExpansionCacheValid())
-    {
+    if (!MI->isExpansionCacheValid()) {
       MI->addTokenToExpansionCache(Identifier);
       MI->setExpansionCacheValid(true);
     }

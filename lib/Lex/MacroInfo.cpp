@@ -299,8 +299,17 @@ void MacroInfo::setNoExpansionCacheValid(bool valid)
   }
 }
 
-void MacroInfo::addTokensToExpansionCache(tokens_iterator begin, tokens_iterator end)
+void MacroInfo::addTokensToExpansionCache(unsigned flags, tokens_iterator begin,
+                                          tokens_iterator end)
 {
+  size_t firstAddedToken = CachedExpansion.size();
   CachedExpansion.append(begin, end);
-  //llvm::errs() << "now sie is " << CachedExpansion.size() << "\n";
+  if (begin != end && (flags | Token::TokenFlags::LeadingSpace)) {
+    CachedExpansion[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
+  }
+}
+
+MacroInfo::~MacroInfo()
+{
+  llvm::errs() << "Deleting MacroInfo ";
 }
