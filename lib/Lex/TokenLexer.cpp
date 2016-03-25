@@ -33,7 +33,6 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   Macro = MI;
   ActualArgs = Actuals;
   CurToken = 0;
-
   ExpandLocStart = Tok.getLocation();
   ExpandLocEnd = ELEnd;
   AtStartOfLine = Tok.isAtStartOfLine();
@@ -89,7 +88,6 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   // If the client is reusing a TokenLexer, make sure to free any memory
   // associated with it.
   destroy();
-
   Macro = nullptr;
   ActualArgs = nullptr;
   Tokens = TokArray;
@@ -277,6 +275,7 @@ void TokenLexer::ExpandFunctionArguments() {
       else
         ResultArgToks = ArgTok;  // Use non-preexpanded tokens.
 
+      llvm::errs() << ArgTok->getName() << "\n";
       // If the arg token expanded into anything, append it.
       if (ResultArgToks->isNot(tok::eof)) {
         unsigned FirstResult = ResultToks.size();
@@ -401,7 +400,7 @@ void TokenLexer::ExpandFunctionArguments() {
   if (MadeChange) {
     assert(!OwnsTokens && "This would leak if we already own the token list");
     // This is deleted in the dtor.
-    NumTokens = ResultToks.size();
+    NumTokens = ResultToks.size(); // TODO this is right approach
     // The tokens will be added to Preprocessor's cache and will be removed
     // when this TokenLexer finishes lexing them.
     Tokens = PP.cacheMacroExpandedTokens(this, ResultToks);
@@ -423,12 +422,12 @@ static bool isWideStringLiteralFromMacro(const Token &FirstTok,
 ///
 bool TokenLexer::Lex(Token &Tok) {
   // let's consider simplest case
-  if (CurToken == 0 && ReadingCachePos == 0 && Macro && Macro->isObjectLike())
-  {
-    ReadingFromExpansionCache = Macro->isExpansionCacheValid();
-    CacheSize = Macro->getExpCache().size();
-    //if (ReadingFromExpansionCache)
-    //  llvm::errs() << "cache size is " << CacheSize << "\n";
+  if (CurToken == 0 && ReadingCachePos == 0 && Macro && Macro->isObjectLike()) {
+    //ReadingFromExpansionCache = false;
+    if (Macro->isExpansionCacheValid()) {
+      Tokens = &*Macro->expansion_tokens_begin();
+      NumTokens = Macro->getExpCache().size();
+    }
   }
 
   // Lexing off the end of the macro, pop this macro off the expansion stack.
@@ -436,27 +435,13 @@ bool TokenLexer::Lex(Token &Tok) {
     // If this is a macro (not a token stream), mark the macro enabled now
     // that it is no longer being expanded.
     if (Macro)
-    {
       Macro->EnableMacro();
-    }
-
-    /*IdentifierInfo *II = Tokens[0].getIdentifierInfo();
-    if (II)
-      llvm::errs() << "Ending for " << II->getName() << "!\n";
-    else
-      llvm::errs() << "Ending for " << Tokens[0].getName() << "!\n";*/
 
     Tok.startToken();
     Tok.setFlagValue(Token::StartOfLine , AtStartOfLine);
     Tok.setFlagValue(Token::LeadingSpace, HasLeadingSpace || NextTokGetsSpace);
     if (CurToken == 0 && ReadingCachePos == 0)
       Tok.setFlag(Token::LeadingEmptyMacro);
-
-    /*if (Macro && Macro->isExpansionCacheValid())
-    {
-      if (II)
-        llvm::errs() << "already expanded " << II->getName() << "\n";
-    }*/
 
     if (Macro && !Macro->isExpansionCacheValid()) {
       makeCachedExpansion(Macro);
@@ -466,9 +451,9 @@ bool TokenLexer::Lex(Token &Tok) {
     return result;
   }
 
-  if (ReadingFromExpansionCache) {
+  /*if (ReadingFromExpansionCache) {
     return LexCachedExpansion(Tok);
-  }
+  }*/
 
   SourceManager &SM = PP.getSourceManager();
 
@@ -513,6 +498,9 @@ bool TokenLexer::Lex(Token &Tok) {
                                       ExpandLocEnd,
                                       Tok.getLength());
     } else {
+      auto loc = Tok.getLocation();
+      Tok.setLocation(SourceLocation::getFromRawEncoding(
+              loc.getRawEncoding() & 0x7FFFFFFFU));
       instLoc = getExpansionLocForMacroDefLoc(Tok.getLocation());
     }
 
@@ -550,17 +538,8 @@ bool TokenLexer::Lex(Token &Tok) {
       PP.HandlePoisonedIdentifier(Tok);
     }
 
-    if (!DisableMacroExpansion && II->isHandleIdentifierCase())
-    {
-      bool result = PP.HandleIdentifier(Tok);
-      /*if (tmp && Macro)
-      {
-        llvm::errs() << "depends on " << II->getName() << "\n";
-        MacroInfo::addDependency(Macro, tmp);
-        Macro->addTokenToUnexpandedCache(Tok);
-      }*/
-
-      return result;
+    if (!DisableMacroExpansion && II->isHandleIdentifierCase()) {
+      return PP.HandleIdentifier(Tok);
     }
   }
 
@@ -764,17 +743,18 @@ bool TokenLexer::PasteTokens(Token &Tok) {
 unsigned TokenLexer::isNextTokenLParen() const {
   // Out of tokens?
   // TODO here need proper answer while using cache
-  llvm::errs() << "TokenLexer::isNextTokenLParen\n";
+  //llvm::errs() << "TokenLexer::isNextTokenLParen\n";
   if (isAtEnd())
     return 2;
-  return Tokens[CurToken].is(tok::l_paren);
+  return (!ReadingFromExpansionCache) ? Tokens[CurToken].is(tok::l_paren) :
+          Macro->getExpCache()[ReadingCachePos].is(tok::l_paren);
 }
 
 /// isParsingPreprocessorDirective - Return true if we are in the middle of a
 /// preprocessor directive.
 bool TokenLexer::isParsingPreprocessorDirective() const {
   // TODO here need proper answer while using cache
-  llvm::errs() << "TokenLexer::isParsingPreprocessorDirective\n";
+  //llvm::errs() << "TokenLexer::isParsingPreprocessorDirective\n";
   return Tokens[NumTokens-1].is(tok::eod) && !isAtEnd();
 }
 
@@ -808,8 +788,8 @@ TokenLexer::getExpansionLocForMacroDefLoc(SourceLocation loc) const {
   assert(loc.isValid() && loc.isFileID());
   
   SourceManager &SM = PP.getSourceManager();
-  assert(SM.isInSLocAddrSpace(loc, MacroDefStart, MacroDefLength) &&
-         "Expected loc to come from the macro definition");
+  //assert(SM.isInSLocAddrSpace(loc, MacroDefStart, MacroDefLength) &&
+  //       "Expected loc to come from the macro definition");
 
   unsigned relativeOffset = 0;
   SM.isInSLocAddrSpace(loc, MacroDefStart, MacroDefLength, &relativeOffset);
