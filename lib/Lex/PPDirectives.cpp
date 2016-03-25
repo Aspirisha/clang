@@ -2273,6 +2273,15 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
     //TODO here steal all dependent on OtherMI MIs, for now they depend on
     // newly defined MacroInfo! Also, propagate that all of them are not cached now
 
+    // andy
+    // set new dependencies
+    for (auto dep = OtherMI->depending_on_this_begin();
+         dep != OtherMI->depending_on_this_end(); ++dep) {
+      MacroInfo::addDependency(*dep, MI);
+      (*dep)->setExpansionCacheValid(false);
+      (*dep)->setNoExpansionCacheValid(false);
+    }
+
    if (getLangOpts().ObjC1 &&
         SourceMgr.getFileID(OtherMI->getDefinitionLoc())
           == getPredefinesFileID() &&
@@ -2283,6 +2292,7 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
           !MI->isIdenticalTo(*OtherMI, *this,
                              /*Syntactic=*/LangOpts.MicrosoftExt)) {
         Diag(MI->getDefinitionLoc(), diag::warn_pp_objc_macro_redef_ignored);
+
       }
       assert(!OtherMI->isWarnIfUnused());
       return;
