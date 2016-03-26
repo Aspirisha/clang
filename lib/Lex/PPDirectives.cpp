@@ -2277,7 +2277,7 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
     // set new dependencies
     for (auto dep = OtherMI->depending_on_this_begin();
          dep != OtherMI->depending_on_this_end(); ++dep) {
-      llvm::errs() << "Reset\n";
+      //llvm::errs() << "Reset\n";
       (*dep)->setNoExpansionCacheValid(false);
     }
 
@@ -2291,6 +2291,7 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
           !MI->isIdenticalTo(*OtherMI, *this,
                              /*Syntactic=*/LangOpts.MicrosoftExt)) {
         Diag(MI->getDefinitionLoc(), diag::warn_pp_objc_macro_redef_ignored);
+
       }
       assert(!OtherMI->isWarnIfUnused());
       return;

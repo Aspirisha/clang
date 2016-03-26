@@ -33,7 +33,6 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   Macro = MI;
   ActualArgs = Actuals;
   CurToken = 0;
-
   ExpandLocStart = Tok.getLocation();
   ExpandLocEnd = ELEnd;
   AtStartOfLine = Tok.isAtStartOfLine();
@@ -97,7 +96,6 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   // If the client is reusing a TokenLexer, make sure to free any memory
   // associated with it.
   destroy();
-
   Macro = nullptr;
   ActualArgs = nullptr;
   Tokens = TokArray;
@@ -284,6 +282,7 @@ void TokenLexer::ExpandFunctionArguments() {
       else
         ResultArgToks = ArgTok;  // Use non-preexpanded tokens.
 
+      //llvm::errs() << ArgTok->getName() << "\n";
       // If the arg token expanded into anything, append it.
       if (ResultArgToks->isNot(tok::eof)) {
         unsigned FirstResult = ResultToks.size();
@@ -408,7 +407,7 @@ void TokenLexer::ExpandFunctionArguments() {
   if (MadeChange) {
     assert(!OwnsTokens && "This would leak if we already own the token list");
     // This is deleted in the dtor.
-    NumTokens = ResultToks.size();
+    NumTokens = ResultToks.size(); // TODO this is right approach
     // The tokens will be added to Preprocessor's cache and will be removed
     // when this TokenLexer finishes lexing them.
     Tokens = PP.cacheMacroExpandedTokens(this, ResultToks);
@@ -499,7 +498,8 @@ bool TokenLexer::Lex(Token &Tok) {
                                       Tok.getLength());
     } else {
       auto loc = Tok.getLocation();
-      Tok.setLocation(SourceLocation::getFromRawEncoding(loc.getRawEncoding() & 0x7FFFFFFFU));
+      Tok.setLocation(SourceLocation::getFromRawEncoding(
+              loc.getRawEncoding() & 0x7FFFFFFFU));
       instLoc = getExpansionLocForMacroDefLoc(Tok.getLocation());
     }
 
@@ -784,7 +784,7 @@ TokenLexer::getExpansionLocForMacroDefLoc(SourceLocation loc) const {
   assert(loc.isValid() && loc.isFileID());
   
   SourceManager &SM = PP.getSourceManager();
- // assert(SM.isInSLocAddrSpace(loc, MacroDefStart, MacroDefLength) &&
+  // assert(SM.isInSLocAddrSpace(loc, MacroDefStart, MacroDefLength) &&
   //       "Expected loc to come from the macro definition");
 
   unsigned relativeOffset = 0;
