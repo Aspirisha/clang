@@ -260,8 +260,7 @@ void MacroInfo::setExpansionCacheValid(bool valid)
     return;
 
   IsExpansionCached = valid;
-  if (!valid)
-  {
+  if (!valid) {
     CachedExpansion.clear();
   }
 }
@@ -292,24 +291,31 @@ void MacroInfo::setNoExpansionCacheValid(bool valid)
   IsCachedWithoutExpansion = valid;
   if (!valid)
   {
+    IsExpansionCached = false;
     NotExpandedCacheTokens.clear();
     CachedExpansion.clear();
+
+    // pessimistic
     DependsOnMIs.clear();
-    CachedExpansion.clear();
+    for (auto dep : DependingOnThisMIs)
+      dep->setNoExpansionCacheValid(false);
   }
 }
 
 void MacroInfo::addTokensToExpansionCache(unsigned flags, tokens_iterator begin,
-                                          tokens_iterator end)
-{
+                                          tokens_iterator end) {
   size_t firstAddedToken = CachedExpansion.size();
   CachedExpansion.append(begin, end);
-  if (begin != end && (flags | Token::TokenFlags::LeadingSpace)) {
-    CachedExpansion[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
+  if (begin != end) {
+    if ((flags & Token::TokenFlags::LeadingSpace)) {
+      CachedExpansion[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
+    } else {
+      CachedExpansion[firstAddedToken].clearFlag(
+              Token::TokenFlags::LeadingSpace);
+    }
   }
 }
 
-MacroInfo::~MacroInfo()
-{
+MacroInfo::~MacroInfo() {
   llvm::errs() << "Deleting MacroInfo ";
 }

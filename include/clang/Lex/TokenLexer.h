@@ -101,8 +101,6 @@ class TokenLexer {
 
   // andy
   bool ReadingFromExpansionCache : 1;
-  unsigned ReadingCachePos;
-  size_t CacheSize;
 
   TokenLexer(const TokenLexer &) = delete;
   void operator=(const TokenLexer &) = delete;
@@ -163,9 +161,7 @@ private:
   /// isAtEnd - Return true if the next lex call will pop this macro off the
   /// include stack.
   bool isAtEnd() const {
-    return ((!ReadingFromExpansionCache && CurToken == NumTokens)
-            || (ReadingFromExpansionCache && ReadingCachePos
-                                            == CacheSize));
+    return (CurToken == NumTokens);
   }
 
   /// PasteTokens - Tok is the LHS of a ## operator, and CurToken is the ##
