@@ -249,9 +249,12 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
 
 
 // andy
-void MacroInfo::addTokenToExpansionCache(const Token &Tok)
-{
-  CachedExpansion.push_back(Tok);
+void MacroInfo::addTokenToExpansionCache(const Token &Tok,
+                                         SourceLocation MacroDefStart,
+                                         unsigned MacroDefLength) {
+  ExpCache.MacroDefStart.push_back(MacroDefStart);
+  ExpCache.MacroDefLength.push_back(MacroDefLength);
+  ExpCache.Tok.push_back(Tok);
 }
 
 void MacroInfo::setExpansionCacheValid(bool valid)
@@ -261,7 +264,7 @@ void MacroInfo::setExpansionCacheValid(bool valid)
 
   IsExpansionCached = valid;
   if (!valid) {
-    CachedExpansion.clear();
+    ExpCache.clear();
   }
 }
 
@@ -279,40 +282,38 @@ bool MacroInfo::removeDependency(MacroInfo *depending, MacroInfo *master)
           master->DependingOnThisMIs.erase(depending));
 }
 
-void MacroInfo::addTokenToUnexpandedCache(const Token &Tok)
-{
+void MacroInfo::addTokenToUnexpandedCache(const Token &Tok) {
   NotExpandedCacheTokens.push_back(Tok);
 }
 
-void MacroInfo::setNoExpansionCacheValid(bool valid)
+void MacroInfo::setUnexpandedCacheValid(bool valid)
 {
   if (valid == IsCachedWithoutExpansion)
     return;
+
   IsCachedWithoutExpansion = valid;
-  if (!valid)
-  {
-    IsExpansionCached = false;
+  if (!valid) {
+    setExpansionCacheValid(false);
     NotExpandedCacheTokens.clear();
-    CachedExpansion.clear();
 
     // pessimistic
     DependsOnMIs.clear();
     for (auto dep : DependingOnThisMIs)
-      dep->setNoExpansionCacheValid(false);
+      dep->setUnexpandedCacheValid(false);
   }
 }
 
-void MacroInfo::addTokensToExpansionCache(unsigned flags, tokens_iterator begin,
-                                          tokens_iterator end) {
-  size_t firstAddedToken = CachedExpansion.size();
-  CachedExpansion.append(begin, end);
-  if (begin != end) {
-    if ((flags & Token::TokenFlags::LeadingSpace)) {
-      CachedExpansion[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
-    } else {
-      CachedExpansion[firstAddedToken].clearFlag(
-              Token::TokenFlags::LeadingSpace);
-    }
+void MacroInfo::addTokensToExpansionCache(unsigned flags, const MacroInfo *source) {
+  if (source->ExpCache.empty())
+    return;
+
+  size_t firstAddedToken = ExpCache.size();
+  ExpCache.append(source->ExpCache);
+  if ((flags & Token::TokenFlags::LeadingSpace)) {
+    ExpCache.Tok[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
+  } else {
+    ExpCache.Tok[firstAddedToken].clearFlag(
+            Token::TokenFlags::LeadingSpace);
   }
 }
 

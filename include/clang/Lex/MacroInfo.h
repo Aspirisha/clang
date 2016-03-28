@@ -114,10 +114,35 @@ class MacroInfo {
 
   // andy: if currently expansion cache is valid. Currently only
   // for function-like macroses
+  struct ExpansionCache
+  {
+    SmallVector<SourceLocation, 8> MacroDefStart;
+    SmallVector<unsigned, 8> MacroDefLength;
+    SmallVector<Token, 8> Tok;
+
+    bool empty() const
+    { return Tok.empty(); }
+
+    void append(const ExpansionCache &other) {
+      MacroDefStart.append(other.MacroDefStart.begin(), other.MacroDefStart.end());
+      MacroDefLength.append(other.MacroDefLength.begin(), other.MacroDefLength.end());
+      Tok.append(other.Tok.begin(), other.Tok.end());
+    }
+
+    void clear() {
+      MacroDefStart.clear();
+      MacroDefLength.clear();
+      Tok.clear();
+    }
+
+    size_t size() const
+    { return Tok.size(); }
+  };
   bool IsExpansionCached : 1;
   bool IsCachedWithoutExpansion : 1;
-  SmallVector<Token, 8> CachedExpansion;
+  ExpansionCache ExpCache;
   SmallVector<Token, 8> NotExpandedCacheTokens;
+
   llvm::SmallPtrSet<MacroInfo*, 8> DependsOnMIs;
   llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
 
@@ -264,14 +289,13 @@ public:
 
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
-  void addTokenToExpansionCache(const Token &Tok);
-  void addTokensToExpansionCache(unsigned flags, tokens_iterator begin, tokens_iterator end);
+  void addTokenToExpansionCache(const Token &Tok, SourceLocation MacroDefStart, unsigned MacroDefLength);
+  void addTokensToExpansionCache(unsigned flags, const MacroInfo *source);
   void addTokenToUnexpandedCache(const Token &Tok);
   void setExpansionCacheValid(bool valid);
-  void setNoExpansionCacheValid(bool valid);
-  void clearExpansionCache(bool setCacheInvalid = true)
-  {
-    CachedExpansion.clear();
+  void setUnexpandedCacheValid(bool valid);
+  void clearExpansionCache(bool setCacheInvalid = true) {
+    ExpCache.clear();
     IsExpansionCached = !setCacheInvalid;
   }
   static bool addDependency(MacroInfo *depending, MacroInfo *master);
@@ -288,24 +312,24 @@ public:
     return IsCachedWithoutExpansion;
   }
 
-  tokens_iterator expansion_tokens_begin() const
-  {
-    return CachedExpansion.begin();
-  }
-
-  tokens_iterator expansion_tokens_end() const
-  { return CachedExpansion.end(); }
-
-  tokens_iterator no_expansion_tokens_begin() const
-  {
+  tokens_iterator no_expansion_tokens_begin() const {
     return NotExpandedCacheTokens.begin();
   }
 
   tokens_iterator no_expansion_tokens_end() const
   { return NotExpandedCacheTokens.end(); }
 
-  bool cachedExpansionEmpty() const { return CachedExpansion.empty(); }
-  ArrayRef<Token> getExpCache() const { return CachedExpansion; }
+  tokens_iterator exp_tokens_begin() const {
+    return ExpCache.Tok.begin();
+  }
+
+  tokens_iterator exp_tokens_end() const
+  { return ExpCache.Tok.end(); }
+
+  const ExpansionCache& getExpansionCache() const
+  { return ExpCache; }
+
+  bool cachedExpansionEmpty() const { return ExpCache.empty(); }
 
   depends_iterator this_depends_on_begin() const
   { return DependsOnMIs.begin();}
@@ -484,6 +508,8 @@ public:
 
   static bool classof(const MacroDirective *) { return true; }
 };
+
+
 
 /// \brief A directive for a defined macro or a macro imported from a module.
 class DefMacroDirective : public MacroDirective {

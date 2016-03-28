@@ -419,7 +419,7 @@ bool Preprocessor::isNextPPTokenLParen() {
 bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
                                                  const MacroDefinition &M) {
   MacroInfo *MI = M.getMacroInfo();
-  //llvm::errs() << "Expanding macro: " << Identifier.getIdentifierInfo()->getNameStart() << "\n";
+  llvm::errs() << "Expanding macro: " << Identifier.getIdentifierInfo()->getNameStart() << "\n";
 
   // If this is a macro expansion in the "#if !defined(x)" line for the file,
   // then the macro could expand to different things in other contexts, we need
@@ -520,8 +520,7 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     ++NumFastMacroExpanded;
 
     // andy
-    if (!MI->isExpansionCacheValid())
-    {
+    if (!MI->isExpansionCacheValid()) {
       MI->clearExpansionCache(false);
     }
 
@@ -574,7 +573,11 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
 
     // TODO create expansion
     if (!MI->isExpansionCacheValid()) {
-      MI->addTokenToExpansionCache(Identifier);
+      SourceLocation MacroDefStart = SourceMgr.getExpansionLoc(
+              Identifier.getLocation());
+      unsigned MacroDefLength = MI->getDefinitionLength(SourceMgr);
+
+      MI->addTokenToExpansionCache(Identifier, MacroDefStart, MacroDefLength);
       MI->setExpansionCacheValid(true);
     }
     return true;
