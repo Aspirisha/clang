@@ -419,7 +419,7 @@ bool Preprocessor::isNextPPTokenLParen() {
 bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
                                                  const MacroDefinition &M) {
   MacroInfo *MI = M.getMacroInfo();
-  llvm::errs() << "Expanding macro: " << Identifier.getIdentifierInfo()->getNameStart() << "\n";
+  //llvm::errs() << "Expanding macro: " << Identifier.getIdentifierInfo()->getNameStart() << "\n";
 
   // If this is a macro expansion in the "#if !defined(x)" line for the file,
   // then the macro could expand to different things in other contexts, we need
@@ -547,6 +547,16 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     Identifier.setFlagValue(Token::StartOfLine , isAtStartOfLine);
     Identifier.setFlagValue(Token::LeadingSpace, hasLeadingSpace);
 
+    // TODO create expansion
+    if (!MI->isExpansionCacheValid()) {
+      SourceLocation MacroDefStart = SourceMgr.getExpansionLoc(
+              Identifier.getLocation());
+      unsigned MacroDefLength = MI->getDefinitionLength(SourceMgr);
+
+      MI->addTokenToExpansionCache(Identifier, MacroDefStart, MacroDefLength);
+      MI->setExpansionCacheValid(true);
+    }
+
     // Update the tokens location to include both its expansion and physical
     // locations.
     SourceLocation Loc =
@@ -559,7 +569,7 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     if (IdentifierInfo *NewII = Identifier.getIdentifierInfo()) {
       if (MacroInfo *NewMI = getMacroInfo(NewII))
         if (!NewMI->isEnabled() || NewMI == MI) {
-          Identifier.setFlag(Token::DisableExpand);
+          Identifier.setFlag(Token::DisableExpand); // TODO set same thing got exp cache
           // Don't warn for "#define X X" like "#define bool bool" from
           // stdbool.h.
           if (NewMI != MI || MI->isFunctionLike())
@@ -571,15 +581,6 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     // we're done.
     ++NumFastMacroExpanded;
 
-    // TODO create expansion
-    if (!MI->isExpansionCacheValid()) {
-      SourceLocation MacroDefStart = SourceMgr.getExpansionLoc(
-              Identifier.getLocation());
-      unsigned MacroDefLength = MI->getDefinitionLength(SourceMgr);
-
-      MI->addTokenToExpansionCache(Identifier, MacroDefStart, MacroDefLength);
-      MI->setExpansionCacheValid(true);
-    }
     return true;
   }
 

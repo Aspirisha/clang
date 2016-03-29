@@ -63,16 +63,7 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
       Tokens = &*Macro->exp_tokens_begin();
       NumTokens = Macro->getExpansionCache().size();
     }
-
-    //llvm::errs() << "Start dump\n";
-    for (int i = 0;
-         i < NumTokens; ++i) {
-      //DUMP_LOCATION(Tokens[i].getLocation())
-      //llvm::errs() << Tokens[i].getName() << "\n";
-    }
-    //llvm::errs() << "End dump\n";
   }
-
 
   if (NumTokens > 0) {
     assert(Tokens[0].getLocation().isValid());
@@ -90,12 +81,12 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
                                                 ExpandLocStart,
                                                 ExpandLocEnd,
                                                 MacroDefLength);
-    DUMP_LOCATION(MacroDefStart)
+    /*DUMP_LOCATION(MacroDefStart)
     llvm::errs() << "Length = " << MacroDefLength << "\n";
     DUMP_LOCATION(ExpandLocStart)
     DUMP_LOCATION(ExpandLocEnd)
     DUMP_LOCATION(MacroExpansionStart)
-    llvm::errs() << "\n";
+    llvm::errs() << "\n";*/
   }
 
   // If this is a function-like macro, expand the arguments and change
@@ -475,7 +466,7 @@ bool TokenLexer::Lex(Token &Tok) {
       makeCachedExpansion(Macro);
     }
 
-    llvm::errs() << "Finished with macro\n";
+    //llvm::errs() << "Finished with macro\n";
     bool result = PP.HandleEndOfTokenLexer(Tok);
     return result;
   }
@@ -487,7 +478,7 @@ bool TokenLexer::Lex(Token &Tok) {
       MacroDefStart = newMacroDefStart;
       MacroDefLength = Macro->getExpansionCache().MacroDefLength[CurToken];
       auto &SM = PP.getSourceManager();
-      DUMP_LOCATION(MacroDefStart)
+      //DUMP_LOCATION(MacroDefStart)
 
       if (MacroDefToMacroStart.find(newMacroDefStart) == MacroDefToMacroStart.end()) {
         MacroExpansionStart = PP.getSourceManager().createExpansionLoc(
@@ -564,13 +555,13 @@ bool TokenLexer::Lex(Token &Tok) {
                                       Tok.getLength());
     } else {
       auto loc = Tok.getLocation();
-      llvm::errs() << Tok.getName() << "\n";
-      DUMP_LOCATION(loc)
+      //llvm::errs() << Tok.getName() << "\n";
+      //DUMP_LOCATION(loc)
      // if (!ReadingFromExpansionCache)
-        instLoc = getExpansionLocForMacroDefLoc(Tok.getLocation());
+        instLoc = getExpansionLocForMacroDefLoc(loc);
      // else
     //    instLoc = instLocs[CurToken];
-      DUMP_LOCATION(instLoc)
+      //DUMP_LOCATION(instLoc)
     }
 
     Tok.setLocation(instLoc);
