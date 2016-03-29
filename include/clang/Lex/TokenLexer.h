@@ -155,7 +155,6 @@ public:
   bool isParsingPreprocessorDirective() const;
 
 private:
-  bool LexCachedExpansion(Token &Tok);
   void CacheFunctionLikeMacro();
 
   void destroy();

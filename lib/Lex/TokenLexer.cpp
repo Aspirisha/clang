@@ -18,10 +18,9 @@
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/SmallString.h"
-
 #include <map>
 using namespace clang;
-using namespace std;
+using std::map;
 
 #define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
                           X.dump(SM);\
@@ -124,6 +123,7 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   NextTokGetsSpace = false;
   MacroExpansionStart = SourceLocation();
   ReadingFromExpansionCache = false;
+  NoArgumentExpansion = false;
   // Set HasLeadingSpace/AtStartOfLine so that the first token will be
   // returned unmodified.
   if (NumToks != 0) {
@@ -449,6 +449,7 @@ bool TokenLexer::Lex(Token &Tok) {
     MacroDefToMacroStart[MacroDefStart] = MacroExpansionStart;
 
   }
+
   // Lexing off the end of the macro, pop this macro off the expansion stack.
   if (isAtEnd()) {
     // If this is a macro (not a token stream), mark the macro enabled now
@@ -571,6 +572,7 @@ bool TokenLexer::Lex(Token &Tok) {
   if (!Tok.isAnnotation() && Tok.getIdentifierInfo() != nullptr) {
     // Change the kind of this identifier to the appropriate token kind, e.g.
     // turning "for" into a keyword.
+
     IdentifierInfo *II = Tok.getIdentifierInfo();
     if (NoArgumentExpansion && -1 != Macro->getArgumentNum(II)) {
       return true;
@@ -584,20 +586,12 @@ bool TokenLexer::Lex(Token &Tok) {
     if (II->isPoisoned() && TokenIsFromPaste) {
       PP.HandlePoisonedIdentifier(Tok);
     }
-
     if (!DisableMacroExpansion && II->isHandleIdentifierCase())
       return PP.HandleIdentifier(Tok);
   }
 
   // Otherwise, return a normal token.
   return true;
-}
-
-bool TokenLexer::LexCachedExpansion(Token &Tok)
-{
-  assert(CurToken < Macro->getExpansionCache().size() && "Out of cache bounds");
-  Tok = Tokens[CurToken++];
-  return true; // TODO always true?
 }
 
 /// PasteTokens - Tok is the LHS of a ## operator, and CurToken is the ##
@@ -831,7 +825,7 @@ TokenLexer::getExpansionLocForMacroDefLoc(SourceLocation loc) const {
   assert(loc.isValid() && loc.isFileID());
   
   SourceManager &SM = PP.getSourceManager();
-   assert(SM.isInSLocAddrSpace(loc, MacroDefStart, MacroDefLength) &&
+  assert(SM.isInSLocAddrSpace(loc, MacroDefStart, MacroDefLength) &&
          "Expected loc to come from the macro definition");
 
   unsigned relativeOffset = 0;
@@ -971,12 +965,6 @@ void TokenLexer::makeCachedExpansion(MacroInfo *MI)
 
     // TODO set proper source locations for its tokens
     MacroInfo::addDependency(MI, m);
-  }
-
-  // forcibly recount length of this macro;
-  for (auto iter = MI->exp_tokens_begin();
-       iter != MI->exp_tokens_end(); ++iter) {
-    //DUMP_LOCATION(iter->getLocation())
   }
 
   //llvm::errs() << "makeCachedExpansion end\n";
