@@ -251,10 +251,12 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
 // andy
 void MacroInfo::addTokenToExpansionCache(const Token &Tok,
                                          SourceLocation MacroDefStart,
-                                         unsigned MacroDefLength) {
+                                         unsigned MacroDefLength,
+                                         unsigned depth) {
   ExpCache.MacroDefStart.push_back(MacroDefStart);
   ExpCache.MacroDefLength.push_back(MacroDefLength);
   ExpCache.Tok.push_back(Tok);
+  ExpCache.Depth.push_back(depth);
 }
 
 void MacroInfo::setExpansionCacheValid(bool valid)
@@ -265,6 +267,11 @@ void MacroInfo::setExpansionCacheValid(bool valid)
   IsExpansionCached = valid;
   if (!valid) {
     ExpCache.clear();
+
+    // pessimistic
+    DependsOnMIs.clear();
+    for (auto dep : DependingOnThisMIs)
+      dep->setExpansionCacheValid(false);
   }
 }
 
@@ -280,27 +287,6 @@ bool MacroInfo::removeDependency(MacroInfo *depending, MacroInfo *master)
 {
   return (depending->DependsOnMIs.erase(master) &&
           master->DependingOnThisMIs.erase(depending));
-}
-
-void MacroInfo::addTokenToUnexpandedCache(const Token &Tok) {
-  NotExpandedCacheTokens.push_back(Tok);
-}
-
-void MacroInfo::setUnexpandedCacheValid(bool valid)
-{
-  if (valid == IsCachedWithoutExpansion)
-    return;
-
-  IsCachedWithoutExpansion = valid;
-  if (!valid) {
-    setExpansionCacheValid(false);
-    NotExpandedCacheTokens.clear();
-
-    // pessimistic
-    DependsOnMIs.clear();
-    for (auto dep : DependingOnThisMIs)
-      dep->setUnexpandedCacheValid(false);
-  }
 }
 
 void MacroInfo::addTokensToExpansionCache(unsigned flags, const MacroInfo *source) {

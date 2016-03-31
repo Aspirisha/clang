@@ -18,15 +18,9 @@
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/SmallString.h"
-#include <map>
+#include <vector>
 using namespace clang;
-using std::map;
-
-#define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
-                          X.dump(SM);\
-                          llvm::errs() << "\n";\
-                          llvm::errs() << "raw = " << X.getRawEncoding() << "\n";\
-                          llvm::errs() << "\n";
+using std::vector;
 
 /// Create a TokenLexer for the specified macro with the specified actual
 /// arguments.  Note that this ctor takes ownership of the ActualArgs pointer.
@@ -50,7 +44,6 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   NumTokens = Macro->tokens_end()-Macro->tokens_begin();
   MacroExpansionStart = SourceLocation();
   ReadingFromExpansionCache = false;
-  NoArgumentExpansion = false;
 
   SourceManager &SM = PP.getSourceManager();
   MacroStartSLocOffset = SM.getNextLocalOffset();
@@ -80,20 +73,12 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
                                                 ExpandLocStart,
                                                 ExpandLocEnd,
                                                 MacroDefLength);
-    /*DUMP_LOCATION(MacroDefStart)
-    llvm::errs() << "Length = " << MacroDefLength << "\n";
-    DUMP_LOCATION(ExpandLocStart)
-    DUMP_LOCATION(ExpandLocEnd)
-    DUMP_LOCATION(MacroExpansionStart)
-    llvm::errs() << "\n";*/
   }
 
   // If this is a function-like macro, expand the arguments and change
   // Tokens to point to the expanded tokens.
-  if (Macro->isFunctionLike() && Macro->getNumArgs()) {
-    //CacheFunctionLikeMacro();
+  if (Macro->isFunctionLike() && Macro->getNumArgs())
     ExpandFunctionArguments();
-  }
 
   // Mark the macro as currently disabled, so that it is not recursively
   // expanded.  The macro must be disabled only after argument pre-expansion of
@@ -123,7 +108,6 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   NextTokGetsSpace = false;
   MacroExpansionStart = SourceLocation();
   ReadingFromExpansionCache = false;
-  NoArgumentExpansion = false;
   // Set HasLeadingSpace/AtStartOfLine so that the first token will be
   // returned unmodified.
   if (NumToks != 0) {
@@ -297,7 +281,6 @@ void TokenLexer::ExpandFunctionArguments() {
       else
         ResultArgToks = ArgTok;  // Use non-preexpanded tokens.
 
-      //llvm::errs() << ArgTok->getName() << "\n";
       // If the arg token expanded into anything, append it.
       if (ResultArgToks->isNot(tok::eof)) {
         unsigned FirstResult = ResultToks.size();
@@ -443,11 +426,18 @@ static bool isWideStringLiteralFromMacro(const Token &FirstTok,
 /// Lex - Lex and return a token from this macro stream.
 ///
 bool TokenLexer::Lex(Token &Tok) {
-  static map<SourceLocation, SourceLocation> MacroDefToMacroStart;
-  if (CurToken == 0 && ReadingFromExpansionCache) {
-    MacroDefToMacroStart.clear();
-    MacroDefToMacroStart[MacroDefStart] = MacroExpansionStart;
+  static vector<SourceLocation> MacroDefToMacroStart;
+  static vector<SourceLocation> MacroDefStarts;
+  static vector<unsigned> depthsStack;
 
+  if (CurToken == 0 && ReadingFromExpansionCache && NumTokens > 0) {
+    MacroDefToMacroStart.clear();
+    depthsStack.clear();
+    MacroDefStarts.clear();
+
+    MacroDefToMacroStart.push_back(MacroExpansionStart);
+    depthsStack.push_back(0);
+    MacroDefStarts.push_back(MacroDefStart);
   }
 
   // Lexing off the end of the macro, pop this macro off the expansion stack.
@@ -464,36 +454,45 @@ bool TokenLexer::Lex(Token &Tok) {
       Tok.setFlag(Token::LeadingEmptyMacro);
 
     if (Macro && !Macro->isExpansionCacheValid()) {
-      makeCachedExpansion(Macro);
+      makeCachedExpansion();
     }
 
-    //llvm::errs() << "Finished with macro\n";
     bool result = PP.HandleEndOfTokenLexer(Tok);
     return result;
   }
 
   if (ReadingFromExpansionCache) {
     auto newMacroDefStart = Macro->getExpansionCache().MacroDefStart[CurToken];
-
     if (MacroDefStart != newMacroDefStart) {
       MacroDefStart = newMacroDefStart;
       MacroDefLength = Macro->getExpansionCache().MacroDefLength[CurToken];
-      auto &SM = PP.getSourceManager();
-      //DUMP_LOCATION(MacroDefStart)
+      unsigned newDepth = Macro->getExpansionCache().Depth[CurToken];
 
-      if (MacroDefToMacroStart.find(newMacroDefStart) == MacroDefToMacroStart.end()) {
+      int index = depthsStack.size() - 1;
+
+      // it's possible to use binary search here, but I think in most cases
+      // it will be overkill
+      while (index > 0 && newDepth <= depthsStack[index - 1]) {
+        index--;
+      }
+
+      depthsStack.resize(index + 1);
+      MacroDefToMacroStart.resize(index + 1);
+      MacroDefStarts.resize(index + 1);
+
+      if (MacroDefStart != MacroDefStarts.back()) {
         MacroExpansionStart = PP.getSourceManager().createExpansionLoc(
                 MacroDefStart,
                 ExpandLocStart,
                 ExpandLocEnd,
                 MacroDefLength);
-        MacroDefToMacroStart[newMacroDefStart] = MacroExpansionStart;
+        MacroDefToMacroStart.push_back(MacroExpansionStart);
+        depthsStack.push_back(newDepth);
+        MacroDefStarts.push_back(MacroDefStart);
       } else {
-        MacroExpansionStart = MacroDefToMacroStart[newMacroDefStart];
-        MacroDefToMacroStart.erase(newMacroDefStart);
+        MacroExpansionStart = MacroDefToMacroStart.back();
       }
     }
-    //return LexCachedExpansion(Tok);
   }
 
   // Get the next token to return.
@@ -523,9 +522,6 @@ bool TokenLexer::Lex(Token &Tok) {
     TokenIsFromPaste = true;
   }
 
-
-  if (Macro && !Macro->isCachedWithoutExpansion()) // TODO probably move to Preprocessor::HandleDefineDirective
-    Macro->addTokenToUnexpandedCache(Tok);
   // If this is the first token, set the lexical properties of the token to
   // match the lexical properties of the macro identifier.
   if (isFirstToken) {
@@ -555,14 +551,7 @@ bool TokenLexer::Lex(Token &Tok) {
                                       ExpandLocEnd,
                                       Tok.getLength());
     } else {
-      auto loc = Tok.getLocation();
-      //llvm::errs() << Tok.getName() << "\n";
-      //DUMP_LOCATION(loc)
-     // if (!ReadingFromExpansionCache)
-        instLoc = getExpansionLocForMacroDefLoc(loc);
-     // else
-    //    instLoc = instLocs[CurToken];
-      //DUMP_LOCATION(instLoc)
+      instLoc = getExpansionLocForMacroDefLoc(Tok.getLocation());
     }
 
     Tok.setLocation(instLoc);
@@ -574,11 +563,7 @@ bool TokenLexer::Lex(Token &Tok) {
     // turning "for" into a keyword.
 
     IdentifierInfo *II = Tok.getIdentifierInfo();
-    if (NoArgumentExpansion && -1 != Macro->getArgumentNum(II)) {
-      return true;
-    }
     Tok.setKind(II->getTokenID());
-    //llvm::errs() << Tok.getName() << "\n";
 
     // If this identifier was poisoned and from a paste, emit an error.  This
     // won't be handled by Preprocessor::HandleIdentifier because this is coming
@@ -931,51 +916,26 @@ void TokenLexer::PropagateLineStartLeadingSpaceInfo(Token &Result) {
   AtStartOfLine = Result.isAtStartOfLine();
   HasLeadingSpace = Result.hasLeadingSpace();
 }
-void TokenLexer::makeCachedExpansion(MacroInfo *MI)
+void TokenLexer::makeCachedExpansion()
 {
-  //llvm::errs() << "makeCachedExpansion start\n";
-
-  MI->setUnexpandedCacheValid(true);
-  MI->setExpansionCacheValid(false);
-  //long i = distance(MI->no_expansion_tokens_begin(),
-  //                 MI->no_expansion_tokens_end());
-  //llvm::errs() << "NOT expanded size is " << i << "\n";
-
   const SourceManager& SM = PP.getSourceManager();
-  for (auto iter = MI->no_expansion_tokens_begin();
-       iter != MI->no_expansion_tokens_end(); ++iter)
-  {
+  for (auto iter = Macro->tokens_begin();
+       iter != Macro->tokens_end(); ++iter) {
     IdentifierInfo *II = iter->getIdentifierInfo();
     if (!II) {
-      //llvm::errs() << iter->getName() << "\n";
-      MI->addTokenToExpansionCache(*iter, MacroDefStart, MacroDefLength);
-
+      Macro->addTokenToExpansionCache(*iter, MacroDefStart, MacroDefLength);
       continue;
     }
-
-    //llvm::errs() << II->getName() << "\n";
 
     MacroInfo *m = PP.getMacroInfo(II);
     if (!m || !m->isExpansionCacheValid()) {
-      MI->addTokenToExpansionCache(*iter, MacroDefStart, MacroDefLength);
+      Macro->addTokenToExpansionCache(*iter, MacroDefStart, MacroDefLength);
       continue;
     }
+    Macro->addTokensToExpansionCache(iter->getFlags(), m);
 
-    MI->addTokensToExpansionCache(iter->getFlags(), m);
-
-    // TODO set proper source locations for its tokens
-    MacroInfo::addDependency(MI, m);
+    MacroInfo::addDependency(Macro, m);
   }
 
-  //llvm::errs() << "makeCachedExpansion end\n";
-  MI->setExpansionCacheValid(true);
-}
-
-void TokenLexer::CacheFunctionLikeMacro() {
-  NoArgumentExpansion = true;
-  SmallVector<Token, 128> resultTokens;
-  while (!isAtEnd()) {
-    Token Tok;
-    Lex(Tok);
-  }
+  Macro->setExpansionCacheValid(true);
 }

@@ -2277,8 +2277,7 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
     // set new dependencies
     for (auto dep = OtherMI->depending_on_this_begin();
          dep != OtherMI->depending_on_this_end(); ++dep) {
-      //llvm::errs() << "Reset\n";
-      (*dep)->setUnexpandedCacheValid(false);
+      (*dep)->setExpansionCacheValid(false);
     }
 
    if (getLangOpts().ObjC1 &&

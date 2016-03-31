@@ -119,6 +119,7 @@ class MacroInfo {
     SmallVector<SourceLocation, 8> MacroDefStart;
     SmallVector<unsigned, 8> MacroDefLength;
     SmallVector<Token, 8> Tok;
+    SmallVector<unsigned, 8> Depth;
 
     bool empty() const
     { return Tok.empty(); }
@@ -127,12 +128,16 @@ class MacroInfo {
       MacroDefStart.append(other.MacroDefStart.begin(), other.MacroDefStart.end());
       MacroDefLength.append(other.MacroDefLength.begin(), other.MacroDefLength.end());
       Tok.append(other.Tok.begin(), other.Tok.end());
+      for (auto iter = other.Depth.begin(); iter != other.Depth.end(); ++iter) {
+        Depth.push_back(*iter + 1);
+      }
     }
 
     void clear() {
       MacroDefStart.clear();
       MacroDefLength.clear();
       Tok.clear();
+      Depth.clear();
     }
 
     size_t size() const
@@ -289,14 +294,13 @@ public:
 
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
-  void addTokenToExpansionCache(const Token &Tok, SourceLocation MacroDefStart, unsigned MacroDefLength);
+  void addTokenToExpansionCache(const Token &Tok, SourceLocation MacroDefStart,
+                                unsigned MacroDefLength, unsigned depth=0);
   void addTokensToExpansionCache(unsigned flags, const MacroInfo *source);
-  void addTokenToUnexpandedCache(const Token &Tok);
   void setExpansionCacheValid(bool valid);
-  void setUnexpandedCacheValid(bool valid);
-  void clearExpansionCache(bool setCacheInvalid = true) {
+  void clearExpansionCache(bool isCached = false) {
     ExpCache.clear();
-    IsExpansionCached = !setCacheInvalid;
+    IsExpansionCached = isCached;
   }
   static bool addDependency(MacroInfo *depending, MacroInfo *master);
   static bool removeDependency(MacroInfo *depending, MacroInfo *master);
@@ -306,18 +310,6 @@ public:
   {
     return IsExpansionCached;
   }
-
-  bool isCachedWithoutExpansion() const
-  {
-    return IsCachedWithoutExpansion;
-  }
-
-  tokens_iterator no_expansion_tokens_begin() const {
-    return NotExpandedCacheTokens.begin();
-  }
-
-  tokens_iterator no_expansion_tokens_end() const
-  { return NotExpandedCacheTokens.end(); }
 
   tokens_iterator exp_tokens_begin() const {
     return ExpCache.Tok.begin();

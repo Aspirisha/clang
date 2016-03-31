@@ -101,7 +101,6 @@ class TokenLexer {
 
   // andy
   bool ReadingFromExpansionCache : 1;
-  bool NoArgumentExpansion : 1;
 
   TokenLexer(const TokenLexer &) = delete;
   void operator=(const TokenLexer &) = delete;
@@ -155,8 +154,6 @@ public:
   bool isParsingPreprocessorDirective() const;
 
 private:
-  void CacheFunctionLikeMacro();
-
   void destroy();
 
   /// isAtEnd - Return true if the next lex call will pop this macro off the
@@ -204,7 +201,7 @@ private:
                                     Preprocessor &PP);
 
   void PropagateLineStartLeadingSpaceInfo(Token &Result);
-  void makeCachedExpansion(MacroInfo *MI);
+  void makeCachedExpansion();
 };
 
 }  // end namespace clang
