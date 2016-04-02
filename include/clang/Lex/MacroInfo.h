@@ -113,7 +113,7 @@ class MacroInfo {
   bool UsedForHeaderGuard : 1;
 
   // andy: if currently expansion cache is valid. Currently only
-  // for function-like macroses
+  // for function-like macros
   struct ExpansionCache
   {
     SmallVector<SourceLocation, 8> MacroDefStart;
@@ -133,6 +133,9 @@ class MacroInfo {
       }
     }
 
+    void push_back(SourceLocation MDefStart, unsigned MDefLen,
+                   const Token &Tok, unsigned Depth);
+
     void clear() {
       MacroDefStart.clear();
       MacroDefLength.clear();
@@ -142,11 +145,14 @@ class MacroInfo {
 
     size_t size() const
     { return Tok.size(); }
+
+    void resize(size_t newSize);
+
+    void pop_back();
   };
   bool IsExpansionCached : 1;
-  bool IsCachedWithoutExpansion : 1;
-  ExpansionCache ExpCache;
-  SmallVector<Token, 8> NotExpandedCacheTokens;
+  mutable size_t CurTempCache;
+
 
   llvm::SmallPtrSet<MacroInfo*, 8> DependsOnMIs;
   llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
@@ -157,6 +163,20 @@ class MacroInfo {
   ~MacroInfo();
 
 public:
+  SmallVector<ExpansionCache, 8> TempCache; // TODO add incapsulation
+  ExpansionCache ExpCache;
+
+  ExpansionCache &addTempCache() {
+    TempCache.resize(TempCache.size() + 1);
+    return TempCache.back();
+  }
+
+  const ExpansionCache & getCurrentTempCache() const {
+    // TODO add move semantics and autoclean when CurTempCache == TempCache.size() - 1
+    assert(CurTempCache != TempCache.size() && "Out of TempCache bounds!");
+    return TempCache[CurTempCache++];
+  }
+
   /// \brief Return the location that the macro was defined at.
   SourceLocation getDefinitionLoc() const { return Location; }
 
@@ -296,7 +316,7 @@ public:
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
   void addTokenToExpansionCache(const Token &Tok, SourceLocation MacroDefStart,
                                 unsigned MacroDefLength, unsigned depth=0);
-  void addTokensToExpansionCache(unsigned flags, const MacroInfo *source);
+  void addTokensToExpansionCache(unsigned flags, const ExpansionCache &srcCache);
   void setExpansionCacheValid(bool valid);
   void clearExpansionCache(bool isCached = false) {
     ExpCache.clear();

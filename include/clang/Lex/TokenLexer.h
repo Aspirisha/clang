@@ -101,6 +101,7 @@ class TokenLexer {
 
   // andy
   bool ReadingFromExpansionCache : 1;
+  bool noArgumentExpansion : 1;
 
   TokenLexer(const TokenLexer &) = delete;
   void operator=(const TokenLexer &) = delete;
@@ -202,6 +203,7 @@ private:
 
   void PropagateLineStartLeadingSpaceInfo(Token &Result);
   void makeCachedExpansion();
+  void cacheFunctionLikeMacro();
 };
 
 }  // end namespace clang
