@@ -58,12 +58,13 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
 
   // let's consider simplest case
   //if (Macro->isObjectLike()) {
-    ReadingFromExpansionCache = Macro->isExpansionCacheValid();
-    if (ReadingFromExpansionCache) {
-      Tokens = &*Macro->exp_tokens_begin();
-      NumTokens = Macro->getExpansionCache().size();
-    }
-  //}
+  ReadingFromExpansionCache = Macro->isExpansionCacheValid();
+  if (ReadingFromExpansionCache) {
+    Tokens = &*Macro->exp_tokens_begin();
+    NumTokens = Macro->getExpansionCache().size();
+  }
+ // }
+
 
   if (NumTokens > 0) {
     assert(Tokens[0].getLocation().isValid());
@@ -85,18 +86,9 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
 
   // If this is a function-like macro, expand the arguments and change
   // Tokens to point to the expanded tokens.
-  if (Macro->isFunctionLike() && Macro->getNumArgs()) {
-   /* if (!Macro->isExpansionCacheValid()) {
-      cacheFunctionLikeMacro();
-      assert(Macro->isExpansionCacheValid());
-    }
-    ReadingFromExpansionCache = true;
-    Tokens = &*Macro->exp_tokens_begin();
-    NumTokens = Macro->getExpansionCache().size();*/
-
-
+  if (Macro->isFunctionLike() && Macro->getNumArgs())
     ExpandFunctionArguments();
-  }
+
 
   // Mark the macro as currently disabled, so that it is not recursively
   // expanded.  The macro must be disabled only after argument pre-expansion of
@@ -318,7 +310,7 @@ void TokenLexer::ExpandFunctionArguments() {
     // If it is not the LHS/RHS of a ## operator, we must pre-expand the
     // argument and substitute the expanded tokens into the result.  This is
     // C99 6.10.3.1p1.
-    if (!PasteBefore && !PasteAfter) {
+    if (!PasteBefore && !PasteAfter || ReadingFromExpansionCache) {
       const Token *ResultArgToks;
 
       // Only preexpand the argument if it could possibly need it.  This
@@ -630,17 +622,17 @@ bool TokenLexer::Lex(Token &Tok) {
   AtStartOfLine = false;
   HasLeadingSpace = false;
 
-  if (ReadingFromExpansionCache)
+  /*if (ReadingFromExpansionCache)
   {
     return true;
-  }
+  }*/
 
   // The token's current location indicate where the token was lexed from.  We
   // need this information to compute the spelling of the token, but any
   // diagnostics for the expanded token should appear as if they came from
   // ExpansionLoc.  Pull this information together into a new SourceLocation
   // that captures all of this.
-  if (!noArgumentExpansion && ExpandLocStart.isValid() &&   // Don't do this for token streams.
+  if (!ReadingFromExpansionCache && ExpandLocStart.isValid() &&   // Don't do this for token streams.
       // Check that the token's location was not already set properly.
       SM.isBeforeInSLocAddrSpace(Tok.getLocation(), MacroStartSLocOffset)) {
     SourceLocation instLoc;
@@ -1039,6 +1031,8 @@ void TokenLexer::makeCachedExpansion() {
     IdentifierInfo *II = iter->getIdentifierInfo();
     if (!II) {
       Macro->addTokenToExpansionCache(*iter, MacroDefStart, MacroDefLength);
+     // if (iter->is(tok::hashhash))
+      //  Macro->ExpCache.Tok.back().setKind(tok::unknown);
       //llvm::errs() << iter->getName() << "\n";
       continue;
     }
@@ -1056,19 +1050,6 @@ void TokenLexer::makeCachedExpansion() {
       macrosNeedingTempCacheCleaning.push_back(m);
       SmallVector<std::pair<MacroInfo::tokens_iterator,
               MacroInfo::tokens_iterator>, 8> argsBoundaries;
-
-      //auto &tmpCache = m->getCurrentTempCache();
-      //auto &tmpCache = m->getExpansionCache();
-      /*for (auto t = tmpCache.Tok.begin(); t != tmpCache.Tok.end(); t++) {
-        if (t->isLiteral())
-          llvm::errs() << t->getLiteralData() << "\n";
-        else if (t->getIdentifierInfo())
-          llvm::errs() << t->getIdentifierInfo()->getName() << "\n";
-        else
-          llvm::errs() << t->getName() << "\n";
-      }
-      llvm::errs() << "-----------------------------------\n";
-      Macro->addTokensToExpansionCache(iter->getFlags(), tmpCache);*/
       // for every added token, check if identifier is an argument of body macro.
       // If so, substitute
       int notClosedParens = 0;
@@ -1126,6 +1107,9 @@ void TokenLexer::makeCachedExpansion() {
           //                                childExpCache.Depth[i] + 1);
 
           Macro->addTokenToExpansionCache(*substTok, dummy_loc, dummy_int);
+          if (Macro->ExpCache.Tok.back().is(tok::hashhash)) {
+            //Macro->ExpCache.Tok.back().setKind(tok::unknown);
+          }
         }
 
         auto getArgNum = [](MacroInfo *m, const Token &t) -> int {
@@ -1136,9 +1120,10 @@ void TokenLexer::makeCachedExpansion() {
         if (firstAddedToken < Macro->ExpCache.size()) {
           Macro->ExpCache.Tok[firstAddedToken].setFlagValue(
                   Token::TokenFlags::LeadingSpace, iter->hasLeadingSpace());
-
+          Macro->ExpCache.Tok[firstAddedToken].setFlagValue(
+                  Token::TokenFlags::StartOfLine, iter->isAtStartOfLine());
         }
-        
+
         if (lastTokWasHashHash && Macro->ExpCache.size() > hashhashPos + 1) {
           Token &lhs = Macro->ExpCache.Tok[hashhashPos - 1];
           const Token &rhs = Macro->ExpCache.Tok[hashhashPos + 1];
