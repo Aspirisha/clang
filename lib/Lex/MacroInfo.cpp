@@ -248,14 +248,8 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
 
 
 // andy
-void MacroInfo::addTokenToExpansionCache(const Token &Tok,
-                                         SourceLocation MacroDefStart,
-                                         unsigned MacroDefLength,
-                                         unsigned depth) {
-  //ExpCache.MacroDefStart.push_back(MacroDefStart);
-  //ExpCache.MacroDefLength.push_back(MacroDefLength);
-  ExpCache.Tok.push_back(Tok);
-  //ExpCache.Depth.push_back(depth);
+void MacroInfo::addTokenToExpansionCache(const Token &Tok) {
+  ExpCache.push_back(Tok);
 }
 
 void MacroInfo::setExpansionCacheValid(bool valid)
@@ -288,43 +282,21 @@ bool MacroInfo::removeDependency(MacroInfo *depending, MacroInfo *master)
           master->DependingOnThisMIs.erase(depending));
 }
 
-void MacroInfo::addTokensToExpansionCache(unsigned flags, const ExpansionCache &srcCache) {
+void MacroInfo::addTokensToExpansionCache(unsigned flags,
+                                          const llvm::SmallVector<Token, 8> &srcCache) {
   if (srcCache.empty())
     return;
 
   size_t firstAddedToken = ExpCache.size();
-  ExpCache.append(srcCache);
+  ExpCache.append(srcCache.begin(), srcCache.end());
   if ((flags & Token::TokenFlags::LeadingSpace)) {
-    ExpCache.Tok[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
+    ExpCache[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
   } else {
-    ExpCache.Tok[firstAddedToken].clearFlag(
+    ExpCache[firstAddedToken].clearFlag(
             Token::TokenFlags::LeadingSpace);
   }
 }
 
 MacroInfo::~MacroInfo() {
   llvm::errs() << "Deleting MacroInfo ";
-}
-
-void MacroInfo::ExpansionCache::push_back(SourceLocation MDefStart,
-                                          unsigned MDefLen, const Token &tok,
-                                          unsigned depth) {
-  //MacroDefStart.push_back(MDefStart);
-  //MacroDefLength.push_back(MDefLen);
-  Tok.push_back(tok);
-  //Depth.push_back(depth);
-}
-
-void MacroInfo::ExpansionCache::resize(size_t newSize) {
-  //MacroDefStart.resize(newSize);
-  //MacroDefLength.resize(newSize);
-  Tok.resize(newSize);
-  //Depth.resize(newSize);
-}
-
-void MacroInfo::ExpansionCache::pop_back() {
-  //MacroDefLength.pop_back();
-  //MacroDefStart.pop_back();
-  Tok.pop_back();
-  //Depth.pop_back();
 }

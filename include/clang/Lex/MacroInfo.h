@@ -114,42 +114,6 @@ class MacroInfo {
 
   // andy: if currently expansion cache is valid. Currently only
   // for function-like macros
-  struct ExpansionCache
-  {
-    SmallVector<SourceLocation, 8> MacroDefStart;
-    SmallVector<unsigned, 8> MacroDefLength;
-    SmallVector<Token, 8> Tok;
-    SmallVector<unsigned, 8> Depth;
-
-    bool empty() const
-    { return Tok.empty(); }
-
-    void append(const ExpansionCache &other) {
-      //MacroDefStart.append(other.MacroDefStart.begin(), other.MacroDefStart.end());
-      //MacroDefLength.append(other.MacroDefLength.begin(), other.MacroDefLength.end());
-      Tok.append(other.Tok.begin(), other.Tok.end());
-      //for (auto iter = other.Depth.begin(); iter != other.Depth.end(); ++iter) {
-      //  Depth.push_back(*iter + 1);
-      //}
-    }
-
-    void push_back(SourceLocation MDefStart, unsigned MDefLen,
-                   const Token &Tok, unsigned Depth);
-
-    void clear() {
-      MacroDefStart.clear();
-      MacroDefLength.clear();
-      Tok.clear();
-      Depth.clear();
-    }
-
-    size_t size() const
-    { return Tok.size(); }
-
-    void resize(size_t newSize);
-
-    void pop_back();
-  };
   bool IsExpansionCached : 1;
   mutable size_t CurTempCache;
 
@@ -163,20 +127,7 @@ class MacroInfo {
   ~MacroInfo();
 
 public:
-  SmallVector<ExpansionCache, 8> TempCache; // TODO add incapsulation
-  ExpansionCache ExpCache;
-  ExpansionCache FuncExpCache;
-
-  ExpansionCache &addTempCache() {
-    TempCache.resize(TempCache.size() + 1);
-    return TempCache.back();
-  }
-
-  const ExpansionCache & getCurrentTempCache() const {
-    // TODO add move semantics and autoclean when CurTempCache == TempCache.size() - 1
-    assert(CurTempCache != TempCache.size() && "Out of TempCache bounds!");
-    return TempCache[CurTempCache++];
-  }
+  SmallVector<Token, 8> ExpCache;// TODO add incapsulation
 
   /// \brief Return the location that the macro was defined at.
   SourceLocation getDefinitionLoc() const { return Location; }
@@ -315,9 +266,8 @@ public:
 
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
-  void addTokenToExpansionCache(const Token &Tok, SourceLocation MacroDefStart,
-                                unsigned MacroDefLength, unsigned depth=0);
-  void addTokensToExpansionCache(unsigned flags, const ExpansionCache &srcCache);
+  void addTokenToExpansionCache(const Token &Tok);
+  void addTokensToExpansionCache(unsigned flags, const SmallVector<Token, 8> &srcCache);
   void setExpansionCacheValid(bool valid);
   void clearExpansionCache(bool isCached = false) {
     ExpCache.clear();
@@ -333,13 +283,13 @@ public:
   }
 
   tokens_iterator exp_tokens_begin() const {
-    return ExpCache.Tok.begin();
+    return ExpCache.begin();
   }
 
   tokens_iterator exp_tokens_end() const
-  { return ExpCache.Tok.end(); }
+  { return ExpCache.end(); }
 
-  const ExpansionCache& getExpansionCache() const
+  const SmallVector<Token, 8>& getExpansionCache() const
   { return ExpCache; }
 
   bool cachedExpansionEmpty() const { return ExpCache.empty(); }

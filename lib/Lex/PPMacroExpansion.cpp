@@ -548,11 +548,7 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
 
     // create expansion cache
     if (!MI->isExpansionCacheValid()) {
-      SourceLocation MacroDefStart = SourceMgr.getExpansionLoc(
-              Identifier.getLocation());
-      unsigned MacroDefLength = MI->getDefinitionLength(SourceMgr);
-
-      MI->addTokenToExpansionCache(Identifier, MacroDefStart, MacroDefLength);
+      MI->addTokenToExpansionCache(Identifier);
       MI->setExpansionCacheValid(true);
     }
 
