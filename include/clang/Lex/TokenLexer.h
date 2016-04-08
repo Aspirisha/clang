@@ -203,7 +203,6 @@ private:
 
   void PropagateLineStartLeadingSpaceInfo(Token &Result);
   void makeCachedExpansion();
-  void cacheFunctionLikeMacro();
 };
 
 }  // end namespace clang

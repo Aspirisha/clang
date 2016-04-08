@@ -18,9 +18,7 @@
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/SmallString.h"
-#include <vector>
 using namespace clang;
-using std::vector;
 
 
 #define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
@@ -57,14 +55,11 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   MacroStartSLocOffset = SM.getNextLocalOffset();
 
   // let's consider simplest case
-  //if (Macro->isObjectLike()) {
   ReadingFromExpansionCache = Macro->isExpansionCacheValid();
   if (ReadingFromExpansionCache) {
     Tokens = &*Macro->exp_tokens_begin();
     NumTokens = Macro->getExpansionCache().size();
-    //llvm::errs() << "atStartOfLine: " << AtStartOfLine << "\n";
   }
- // }
 
 
   if (NumTokens > 0) {
@@ -528,7 +523,9 @@ bool TokenLexer::Lex(Token &Tok) {
   // diagnostics for the expanded token should appear as if they came from
   // ExpansionLoc.  Pull this information together into a new SourceLocation
   // that captures all of this.
-  if (!ReadingFromExpansionCache && ExpandLocStart.isValid() &&   // Don't do this for token streams.
+
+  // Don't do this for token streams. and for reading from cache
+  if (!ReadingFromExpansionCache && ExpandLocStart.isValid() &&
       // Check that the token's location was not already set properly.
       SM.isBeforeInSLocAddrSpace(Tok.getLocation(), MacroStartSLocOffset)) {
     SourceLocation instLoc;
@@ -559,11 +556,8 @@ bool TokenLexer::Lex(Token &Tok) {
     }
 
     // TODO copy tempCache in case identifier was a function-like macro
-    if (!DisableMacroExpansion && II->isHandleIdentifierCase()) {
-      bool result =  PP.HandleIdentifier(Tok);
-      //llvm::errs() << "result is " << result << "\n";
-      return result;
-    }
+    if (!DisableMacroExpansion && II->isHandleIdentifierCase())
+      return PP.HandleIdentifier(Tok);
   }
 
   // Otherwise, return a normal token.
@@ -729,7 +723,6 @@ bool TokenLexer::PasteTokens(Token &Tok) {
   // expanded from the full ## expression. Pull this information together into
   // a new SourceLocation that captures all of this.
   SourceManager &SM = PP.getSourceManager();
-  //llvm::errs() << "HERE?!\n";
 
   if (!ReadingFromExpansionCache) {
     if (StartLoc.isFileID())
@@ -768,7 +761,6 @@ unsigned TokenLexer::isNextTokenLParen() const {
   if (isAtEnd())
     return 2;
 
-  //llvm::errs() << "isNextTokenLParen? " << Tokens[CurToken].getName() << "\n";
   return Tokens[CurToken].is(tok::l_paren);
 }
 
@@ -917,7 +909,6 @@ void TokenLexer::PropagateLineStartLeadingSpaceInfo(Token &Result) {
 }
 
 void TokenLexer::makeCachedExpansion() {
-  SmallVector<MacroInfo*, 8> macrosNeedingTempCacheCleaning;
   for (auto iter = Macro->tokens_begin();
        iter != Macro->tokens_end(); ++iter) {
     IdentifierInfo *II = iter->getIdentifierInfo();
@@ -926,7 +917,6 @@ void TokenLexer::makeCachedExpansion() {
       continue;
     }
 
-    //llvm::errs() << II->getName() << "\n";
     MacroInfo *m = PP.getMacroInfo(II);
 
     if (!m || !m->isExpansionCacheValid()) {
@@ -935,8 +925,6 @@ void TokenLexer::makeCachedExpansion() {
     }
 
     if (m->isFunctionLike()) {
-      //llvm::errs() << "tmp_cache: \n";
-      macrosNeedingTempCacheCleaning.push_back(m);
       SmallVector<std::pair<MacroInfo::tokens_iterator,
               MacroInfo::tokens_iterator>, 8> argsBoundaries;
       // for every added token, check if identifier is an argument of body macro.
@@ -945,7 +933,6 @@ void TokenLexer::makeCachedExpansion() {
       MacroInfo::tokens_iterator start = iter + 2; // +1 is (
       do {
         ++iter;
-        //llvm::errs() << iter->getName() << "\n";
         if (iter->is(tok::comma) && notClosedParens == 1) {
           argsBoundaries.push_back(std::make_pair(start, iter));
           start = iter + 1;
@@ -980,11 +967,6 @@ void TokenLexer::makeCachedExpansion() {
           Macro->addTokenToExpansionCache(*substTok);
         }
 
-        auto getArgNum = [](MacroInfo *m, const Token &t) -> int {
-          IdentifierInfo *II = t.getIdentifierInfo();
-          return II ? m->getArgumentNum(II) : -1;
-        };
-
         if (firstAddedToken < Macro->ExpCache.size()) {
           Macro->ExpCache[firstAddedToken].setFlagValue(
                   Token::TokenFlags::LeadingSpace, iter->hasLeadingSpace());
@@ -993,13 +975,11 @@ void TokenLexer::makeCachedExpansion() {
         }
       }
     } else {
-      //llvm::errs() << "object like cache\n";
       Macro->addTokensToExpansionCache(iter->getFlags(), m->ExpCache);
     }
 
     MacroInfo::addDependency(Macro, m);
   }
 
-  //llvm::errs() << "=======================================\n";
   Macro->setExpansionCacheValid(true);
 }
