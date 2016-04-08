@@ -1117,6 +1117,8 @@ void TokenLexer::makeCachedExpansion() {
 
         // current token is argument of in-body macro. Expand it!
         auto currentArgSubstBounds = argsBoundaries[ArgNo];
+        size_t firstAddedToken = Macro->ExpCache.size();
+
         for (MacroInfo::tokens_iterator substTok = currentArgSubstBounds.first;
              substTok != currentArgSubstBounds.second; ++substTok) {
           //Macro->addTokenToExpansionCache(*substTok, childExpCache.MacroDefStart[i],
@@ -1131,6 +1133,12 @@ void TokenLexer::makeCachedExpansion() {
           return II ? m->getArgumentNum(II) : -1;
         };
 
+        if (firstAddedToken < Macro->ExpCache.size()) {
+          Macro->ExpCache.Tok[firstAddedToken].setFlagValue(
+                  Token::TokenFlags::LeadingSpace, iter->hasLeadingSpace());
+
+        }
+        
         if (lastTokWasHashHash && Macro->ExpCache.size() > hashhashPos + 1) {
           Token &lhs = Macro->ExpCache.Tok[hashhashPos - 1];
           const Token &rhs = Macro->ExpCache.Tok[hashhashPos + 1];
