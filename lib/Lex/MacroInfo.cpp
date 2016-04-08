@@ -252,10 +252,10 @@ void MacroInfo::addTokenToExpansionCache(const Token &Tok,
                                          SourceLocation MacroDefStart,
                                          unsigned MacroDefLength,
                                          unsigned depth) {
-  ExpCache.MacroDefStart.push_back(MacroDefStart);
-  ExpCache.MacroDefLength.push_back(MacroDefLength);
+  //ExpCache.MacroDefStart.push_back(MacroDefStart);
+  //ExpCache.MacroDefLength.push_back(MacroDefLength);
   ExpCache.Tok.push_back(Tok);
-  ExpCache.Depth.push_back(depth);
+  //ExpCache.Depth.push_back(depth);
 }
 
 void MacroInfo::setExpansionCacheValid(bool valid)
@@ -309,22 +309,22 @@ MacroInfo::~MacroInfo() {
 void MacroInfo::ExpansionCache::push_back(SourceLocation MDefStart,
                                           unsigned MDefLen, const Token &tok,
                                           unsigned depth) {
-  MacroDefStart.push_back(MDefStart);
-  MacroDefLength.push_back(MDefLen);
+  //MacroDefStart.push_back(MDefStart);
+  //MacroDefLength.push_back(MDefLen);
   Tok.push_back(tok);
-  Depth.push_back(depth);
+  //Depth.push_back(depth);
 }
 
 void MacroInfo::ExpansionCache::resize(size_t newSize) {
-  MacroDefStart.resize(newSize);
-  MacroDefLength.resize(newSize);
+  //MacroDefStart.resize(newSize);
+  //MacroDefLength.resize(newSize);
   Tok.resize(newSize);
-  Depth.resize(newSize);
+  //Depth.resize(newSize);
 }
 
 void MacroInfo::ExpansionCache::pop_back() {
-  MacroDefLength.pop_back();
-  MacroDefStart.pop_back();
+  //MacroDefLength.pop_back();
+  //MacroDefStart.pop_back();
   Tok.pop_back();
-  Depth.pop_back();
+  //Depth.pop_back();
 }

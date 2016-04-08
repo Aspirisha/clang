@@ -125,12 +125,12 @@ class MacroInfo {
     { return Tok.empty(); }
 
     void append(const ExpansionCache &other) {
-      MacroDefStart.append(other.MacroDefStart.begin(), other.MacroDefStart.end());
-      MacroDefLength.append(other.MacroDefLength.begin(), other.MacroDefLength.end());
+      //MacroDefStart.append(other.MacroDefStart.begin(), other.MacroDefStart.end());
+      //MacroDefLength.append(other.MacroDefLength.begin(), other.MacroDefLength.end());
       Tok.append(other.Tok.begin(), other.Tok.end());
-      for (auto iter = other.Depth.begin(); iter != other.Depth.end(); ++iter) {
-        Depth.push_back(*iter + 1);
-      }
+      //for (auto iter = other.Depth.begin(); iter != other.Depth.end(); ++iter) {
+      //  Depth.push_back(*iter + 1);
+      //}
     }
 
     void push_back(SourceLocation MDefStart, unsigned MDefLen,
@@ -165,6 +165,7 @@ class MacroInfo {
 public:
   SmallVector<ExpansionCache, 8> TempCache; // TODO add incapsulation
   ExpansionCache ExpCache;
+  ExpansionCache FuncExpCache;
 
   ExpansionCache &addTempCache() {
     TempCache.resize(TempCache.size() + 1);
