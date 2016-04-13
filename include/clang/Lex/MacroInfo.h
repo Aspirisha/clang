@@ -128,6 +128,7 @@ class MacroInfo {
 
 public:
   SmallVector<Token, 8> ExpCache;// TODO add incapsulation
+  SmallVector<unsigned, 8> ExpDepths;
 
   /// \brief Return the location that the macro was defined at.
   SourceLocation getDefinitionLoc() const { return Location; }
@@ -266,11 +267,13 @@ public:
 
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
-  void addTokenToExpansionCache(const Token &Tok);
-  void addTokensToExpansionCache(unsigned flags, const SmallVector<Token, 8> &srcCache);
+  void addTokenToExpansionCache(const Token &Tok, unsigned depth = 0);
+  void addTokensToExpansionCache(unsigned flags, const SmallVector<Token, 8> &srcCache,
+                                 const llvm::SmallVector<unsigned, 8> &srcDepths);
   void setExpansionCacheValid(bool valid);
   void clearExpansionCache(bool isCached = false) {
     ExpCache.clear();
+    ExpDepths.clear();
     IsExpansionCached = isCached;
   }
   static bool addDependency(MacroInfo *depending, MacroInfo *master);

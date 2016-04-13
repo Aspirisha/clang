@@ -199,6 +199,7 @@ void TokenLexer::ExpandFunctionArguments() {
     // when the #define was parsed.
     const Token &CurTok = Tokens[i];
 
+    llvm::errs() << CurTok.getName() << " ";
     if (i != 0 && !Tokens[i-1].is(tok::hashhash) && CurTok.hasLeadingSpace())
       NextTokGetsSpace = true;
 
@@ -909,9 +910,15 @@ void TokenLexer::PropagateLineStartLeadingSpaceInfo(Token &Result) {
 }
 
 void TokenLexer::makeCachedExpansion() {
+  using tokens_iterator = MacroInfo::tokens_iterator;
+  typedef llvm::SmallVector<unsigned, 8>::const_iterator depth_iterator;
+
+  llvm::errs() << "makeCachedExpansion()\n";
+  depth_iterator global_depth_iter = Macro->ExpDepths.begin();
   for (auto iter = Macro->tokens_begin();
-       iter != Macro->tokens_end(); ++iter) {
+       iter != Macro->tokens_end(); ++iter, ++global_depth_iter) {
     IdentifierInfo *II = iter->getIdentifierInfo();
+
     if (!II) {
       Macro->addTokenToExpansionCache(*iter);
       continue;
@@ -919,22 +926,29 @@ void TokenLexer::makeCachedExpansion() {
 
     MacroInfo *m = PP.getMacroInfo(II);
 
-    if (!m || !m->isExpansionCacheValid()) {
+    if (Macro->getArgumentNum(II) != -1 || !m || !m->isExpansionCacheValid()) {
       Macro->addTokenToExpansionCache(*iter);
       continue;
     }
 
     if (m->isFunctionLike()) {
-      SmallVector<std::pair<MacroInfo::tokens_iterator,
-              MacroInfo::tokens_iterator>, 8> argsBoundaries;
+      llvm::errs() << II->getName() << "\n";
+      SmallVector<std::pair<tokens_iterator, tokens_iterator>, 8> argsBoundaries;
+      SmallVector<std::pair<depth_iterator, depth_iterator>, 8> argsDepths;
+
       // for every added token, check if identifier is an argument of body macro.
       // If so, substitute
       int notClosedParens = 0;
-      MacroInfo::tokens_iterator start = iter + 2; // +1 is (
+      tokens_iterator start = iter + 2; // +1 is (
+      depth_iterator depth_start = global_depth_iter + 2;
       do {
         ++iter;
+        ++global_depth_iter;
+
+        llvm::errs() << iter->getName() << " ";
         if (iter->is(tok::comma) && notClosedParens == 1) {
           argsBoundaries.push_back(std::make_pair(start, iter));
+          argsDepths.push_back(std::make_pair(depth_start, global_depth_iter));
           start = iter + 1;
         } else if (iter->is(tok::l_paren)) {
           notClosedParens++;
@@ -943,30 +957,60 @@ void TokenLexer::makeCachedExpansion() {
         }
       } while (notClosedParens > 0);
 
+      llvm::errs() << iter->getName() << "\n";
       // push last argument
-      if (m->getNumArgs() > 0)
+      if (m->getNumArgs() > 0) {
         argsBoundaries.push_back(std::make_pair(start, iter));
+        argsDepths.push_back(std::make_pair(depth_start, global_depth_iter));
+      }
 
       const Token *toks = &*m->exp_tokens_begin();
       for (int i = 0; i < m->getExpansionCache().size(); i++) {
         IdentifierInfo *II = toks[i].getIdentifierInfo();
 
         int ArgNo = II ? m->getArgumentNum(II) : -1;
+        if (II)
+          llvm::errs() << II->getName() << "\n";
+        else
+          llvm::errs() << toks[i].getName() << "\n";
         if (ArgNo == -1) {
-          Macro->addTokenToExpansionCache(toks[i]);
+          Macro->addTokenToExpansionCache(toks[i], m->ExpDepths[i] + 1);
           continue;
         }
 
+
         // current token is argument of in-body macro. Expand it!
+        llvm::errs() << m->getNumArgs() << " " << ArgNo << " " << argsBoundaries.size() << "\n";
         auto currentArgSubstBounds = argsBoundaries[ArgNo];
+        auto currentArgSubstDepths = argsDepths[ArgNo];
+
         size_t firstAddedToken = Macro->ExpCache.size();
 
-        for (MacroInfo::tokens_iterator substTok = currentArgSubstBounds.first;
-             substTok != currentArgSubstBounds.second; ++substTok) {
+        depth_iterator substDepth = currentArgSubstDepths.first;
+        for (tokens_iterator substTok = currentArgSubstBounds.first;
+             substTok != currentArgSubstBounds.second; ++substTok, ++substDepth) {
 
-          Macro->addTokenToExpansionCache(*substTok);
+          auto II = substTok->getIdentifierInfo();
+          if (!II || Macro->getArgumentNum(II) != -1) {
+            Macro->addTokenToExpansionCache(*substTok, *substDepth);
+            continue;
+          }
+
+          MacroInfo *m1 = PP.getMacroInfo(II);
+          if (!m1) {
+            Macro->addTokenToExpansionCache(*substTok, *substDepth);
+            continue;
+          }
+
+          assert(m1->isExpansionCacheValid() && "I thuhgt it must be valid!");
+          // substitute argument
+          llvm::errs() << "SHIT: " <<  II->getName()<< "\n";
+          Macro->addTokenToExpansionCache(*substTok, *substDepth);
+
         }
 
+
+        llvm::errs() << "herer\n";
         if (firstAddedToken < Macro->ExpCache.size()) {
           Macro->ExpCache[firstAddedToken].setFlagValue(
                   Token::TokenFlags::LeadingSpace, iter->hasLeadingSpace());
@@ -975,11 +1019,16 @@ void TokenLexer::makeCachedExpansion() {
         }
       }
     } else {
-      Macro->addTokensToExpansionCache(iter->getFlags(), m->ExpCache);
+      Macro->addTokensToExpansionCache(iter->getFlags(), m->ExpCache, m->ExpDepths);
     }
 
     MacroInfo::addDependency(Macro, m);
   }
 
+  // ????
+  if (!Macro->ExpCache.empty()) {
+    Macro->ExpCache[0].setFlagValue(
+            Token::TokenFlags::LeadingSpace, true);
+  }
   Macro->setExpansionCacheValid(true);
 }
