@@ -174,6 +174,9 @@ private:
   /// return preexpanded tokens from Tokens.
   void ExpandFunctionArguments();
 
+  // andy
+  void ExpandFunctionArgumentsFromCache();
+
   /// HandleMicrosoftCommentPaste - In microsoft compatibility mode, /##/ pastes
   /// together to form a comment that comments out everything in the current
   /// macro, other active macros, and anything left on the current physical

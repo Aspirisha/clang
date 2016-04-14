@@ -249,8 +249,7 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
 
 // andy
 void MacroInfo::addTokenToExpansionCache(const Token &Tok, unsigned depth) {
-  ExpCache.push_back(Tok);
-  ExpDepths.push_back(depth);
+  ExpCache.push_back(TokenWithDepth(Tok, depth));
 }
 
 void MacroInfo::setExpansionCacheValid(bool valid)
@@ -261,7 +260,6 @@ void MacroInfo::setExpansionCacheValid(bool valid)
   IsExpansionCached = valid;
   if (!valid) {
     ExpCache.clear();
-    ExpDepths.clear();
     // pessimistic
     DependsOnMIs.clear();
     for (auto dep : DependingOnThisMIs)
@@ -284,23 +282,20 @@ bool MacroInfo::removeDependency(MacroInfo *depending, MacroInfo *master)
 }
 
 void MacroInfo::addTokensToExpansionCache(unsigned flags,
-                                          const llvm::SmallVector<Token, 8> &srcCache,
-        const llvm::SmallVector<unsigned, 8> &srcDepths) {
+       const llvm::SmallVector<TokenWithDepth, 8> &srcCache) {
   if (srcCache.empty())
     return;
 
   size_t firstAddedToken = ExpCache.size();
   ExpCache.append(srcCache.begin(), srcCache.end());
-
-  for (auto d : srcDepths) {
-    ExpDepths.push_back(d + 1);
+  for (auto i = ExpCache.begin() + firstAddedToken; i != ExpCache.end(); i++) {
+    i->depth++;
   }
 
   if ((flags & Token::TokenFlags::LeadingSpace)) {
     ExpCache[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
   } else {
-    ExpCache[firstAddedToken].clearFlag(
-            Token::TokenFlags::LeadingSpace);
+    ExpCache[firstAddedToken].clearFlag(Token::TokenFlags::LeadingSpace);
   }
 }
 

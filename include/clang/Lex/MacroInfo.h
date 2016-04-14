@@ -127,8 +127,13 @@ class MacroInfo {
   ~MacroInfo();
 
 public:
-  SmallVector<Token, 8> ExpCache;// TODO add incapsulation
-  SmallVector<unsigned, 8> ExpDepths;
+  struct TokenWithDepth : public Token {
+    TokenWithDepth(const Token &tok, unsigned depth) : Token(tok), depth(depth) {}
+
+    unsigned depth;
+  };
+
+  SmallVector<TokenWithDepth, 8> ExpCache;// TODO add incapsulation
 
   /// \brief Return the location that the macro was defined at.
   SourceLocation getDefinitionLoc() const { return Location; }
@@ -266,14 +271,14 @@ public:
 
 
   // andy
+  typedef llvm::SmallVector<TokenWithDepth, 8>::const_iterator tokens_with_depth_iterator;
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
   void addTokenToExpansionCache(const Token &Tok, unsigned depth = 0);
-  void addTokensToExpansionCache(unsigned flags, const SmallVector<Token, 8> &srcCache,
-                                 const llvm::SmallVector<unsigned, 8> &srcDepths);
+  void addTokensToExpansionCache(unsigned flags, const SmallVector<TokenWithDepth, 8> &srcCache);
+
   void setExpansionCacheValid(bool valid);
   void clearExpansionCache(bool isCached = false) {
     ExpCache.clear();
-    ExpDepths.clear();
     IsExpansionCached = isCached;
   }
   static bool addDependency(MacroInfo *depending, MacroInfo *master);
@@ -285,14 +290,14 @@ public:
     return IsExpansionCached;
   }
 
-  tokens_iterator exp_tokens_begin() const {
+  tokens_with_depth_iterator exp_tokens_begin() const {
     return ExpCache.begin();
   }
 
-  tokens_iterator exp_tokens_end() const
+  tokens_with_depth_iterator exp_tokens_end() const
   { return ExpCache.end(); }
 
-  const SmallVector<Token, 8>& getExpansionCache() const
+  const SmallVector<TokenWithDepth, 8>& getExpansionCache() const
   { return ExpCache; }
 
   bool cachedExpansionEmpty() const { return ExpCache.empty(); }
