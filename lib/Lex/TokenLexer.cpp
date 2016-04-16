@@ -36,6 +36,8 @@ void DUMP_TOKEN_PTR(T tok, const char * end=" ") {
 }
 
 namespace {
+  typedef std::list<Token>::iterator tokens_iterator;
+  typedef SmallVector<std::pair<tokens_iterator, tokens_iterator>, 8> ArgsBounds_t;
   inline bool isArg(const Token &tok, const MacroInfo *holder) {
     IdentifierInfo *II = tok.getIdentifierInfo();
     return II ? holder->getArgumentNum(II) != -1 : false;
@@ -44,6 +46,85 @@ namespace {
   inline int getArgNum(const Token &tok, const MacroInfo *holder) {
     IdentifierInfo *II = tok.getIdentifierInfo();
     return II ? holder->getArgumentNum(II) : -1;
+  }
+
+  ArgsBounds_t getMacroArgs(tokens_iterator &iter, const MacroInfo *m) {
+    IdentifierInfo *II = iter->getIdentifierInfo();
+
+    llvm::errs() << "Name = " <<  II->getName() << "\n";
+    SmallVector<std::pair<tokens_iterator, tokens_iterator>, 8> argsBoundaries;
+
+    // for every added token, check if identifier is an argument of body macro.
+    // If so, substitute
+    int notClosedParens = 0;
+    tokens_iterator start = next(iter, 2); // +1 is (
+    size_t argsSize = 0;
+    do {
+      ++iter;
+      argsSize++;
+      DUMP_TOKEN_PTR(iter, " ");
+
+      if (iter->is(tok::comma) && notClosedParens == 1) {
+        argsBoundaries.push_back(std::make_pair(start, iter));
+        start = next(iter, 1);
+      } else if (iter->is(tok::l_paren)) {
+        notClosedParens++;
+      } else if (iter->is(tok::r_paren)) {
+        notClosedParens--;
+      }
+    } while (notClosedParens > 0);
+
+    llvm::errs() << "\n argsSize = " << argsSize << "\n";
+    // push last argument
+    if (m->getNumArgs() > 0) {
+      argsBoundaries.push_back(std::make_pair(start, iter));
+    }
+
+    return argsBoundaries;
+  }
+
+  /**
+   * After this function finishes, iter will point to the token
+   */
+  tokens_iterator substituteArguments(const Token *toks, size_t numToks,
+                           tokens_iterator &iter, const MacroInfo *m,
+                           std::list<Token> &outputTokens) {
+    llvm::errs() << "START\n";
+    tokens_iterator startErase = iter;
+    auto argsBoundaries = getMacroArgs(iter, m);
+    tokens_iterator endErase = iter;
+    tokens_iterator insertTokPlace = std::next(iter);
+    llvm::errs() << "START\n";
+
+    for (size_t i = 0; i < numToks; i++) {
+      IdentifierInfo *II = toks[i].getIdentifierInfo();
+
+      int ArgNo = II ? m->getArgumentNum(II) : -1;
+      DUMP_TOKEN_PTR(toks + i, "\n");
+
+      /* TODO also test that toks[i] has same depth as m, if it's deeper,
+       definitely it's not an argument so don't expand is m's arg */
+      if (ArgNo == -1) {
+        //Macro->addTokenToExpansionCache(toks[i], m->ExpDepths[i] + 1);
+        auto newTok = outputTokens.insert(insertTokPlace, toks[i]);
+        newTok->depth++;
+        continue;
+      }
+
+
+      // current token is argument of in-body macro. Expand it!
+      llvm::errs() << m->getNumArgs() << " " << ArgNo << " " << argsBoundaries.size() << "\n";
+      auto currentArgSubstBounds = argsBoundaries[ArgNo];
+
+      int counter = 0;
+      for (tokens_iterator substTok = currentArgSubstBounds.first;
+           substTok != currentArgSubstBounds.second; ++substTok) {
+        auto newTok = outputTokens.insert(insertTokPlace, *substTok);
+        newTok->depth++;
+        assert(counter++ < 1000);
+      }
+    }
+    return outputTokens.erase(startErase, std::next(endErase));
   }
 }
 
@@ -1163,7 +1244,6 @@ bool TokenLexer::PasteTokensToCache(std::list<Token>::iterator lhs,
 
 void TokenLexer::makeCachedExpansion() {
   using namespace std;
-  typedef list<Token>::const_iterator tokens_iterator;
 
   WritingExpansionCache = true;
   llvm::errs() << "makeCachedExpansion()\n";
@@ -1177,8 +1257,15 @@ void TokenLexer::makeCachedExpansion() {
     return (n != tokens.end() && n->is(tok::l_paren));
   };
 
+  bool needNextIter;
+
+  auto stepIfNeeded = [&needNextIter](tokens_iterator &iter) {
+    if (needNextIter) ++iter;
+  };
+
   for (auto iter = tokens.begin();
-       iter != tokens.end(); ++iter) {
+       iter != tokens.end(); stepIfNeeded(iter)) {
+    needNextIter = true;
 
     tokens_iterator succ = next(iter);
     IdentifierInfo *II = iter->getIdentifierInfo();
@@ -1190,7 +1277,6 @@ void TokenLexer::makeCachedExpansion() {
     // ok, current token is not Macro's argument. If next is ## and next after
     // next is not Macro's argument also, then we can just merge them
     if (ArgNum == -1 && nextTokIsHashHash) {
-      llvm::errs() << "here\n";
       llvm::errs() << succ->depth << "\n";
       auto succ2 = next(iter, 2);
       assert (succ2 != tokens.end() && "ERROR! ## can't be last in the token stream\n");
@@ -1221,66 +1307,9 @@ void TokenLexer::makeCachedExpansion() {
 
     // expand function like macro only if it has "(" as nex token
     if (m->isFunctionLike()) {
-      llvm::errs() << "Name = " <<  II->getName() << "\n";
-      SmallVector<std::pair<tokens_iterator, tokens_iterator>, 8> argsBoundaries;
-
-      // for every added token, check if identifier is an argument of body macro.
-      // If so, substitute
-      int notClosedParens = 0;
-      tokens_iterator start = next(iter, 2); // +1 is (
-      size_t argsSize = 0;
-      do {
-        ++iter;
-        argsSize++;
-        DUMP_TOKEN_PTR(iter, " ");
-
-        if (iter->is(tok::comma) && notClosedParens == 1) {
-          argsBoundaries.push_back(std::make_pair(start, iter));
-          start = next(iter, 1);
-        } else if (iter->is(tok::l_paren)) {
-          notClosedParens++;
-        } else if (iter->is(tok::r_paren)) {
-          notClosedParens--;
-        }
-      } while (notClosedParens > 0);
-
-      llvm::errs() << "\n argsSize = " << argsSize << "\n";
-      // push last argument
-      if (m->getNumArgs() > 0) {
-        argsBoundaries.push_back(std::make_pair(start, iter));
-      }
-
       const Token *toks = &*m->ExpCache.begin();
-      list<Token>::iterator insertTokPlace = next(iter, 1);
-
-      for (size_t i = 0; i < m->getExpansionCache().size(); i++) {
-        IdentifierInfo *II = toks[i].getIdentifierInfo();
-
-        int ArgNo = II ? m->getArgumentNum(II) : -1;
-        DUMP_TOKEN_PTR(toks + i, "\n");
-
-        /* TODO also test that toks[i] has same depth as m, if it's deeper,
-         definitely it's not an argument so don't expand is m's arg */
-        if (ArgNo == -1) {
-          //Macro->addTokenToExpansionCache(toks[i], m->ExpDepths[i] + 1);
-          auto newTok = tokens.insert(insertTokPlace, toks[i]);
-          newTok->depth++;
-          continue;
-        }
-
-
-        // current token is argument of in-body macro. Expand it!
-        llvm::errs() << m->getNumArgs() << " " << ArgNo << " " << argsBoundaries.size() << "\n";
-        auto currentArgSubstBounds = argsBoundaries[ArgNo];
-
-        int counter = 0;
-        for (tokens_iterator substTok = currentArgSubstBounds.first;
-             substTok != currentArgSubstBounds.second; ++substTok) {
-          auto newTok = tokens.insert(insertTokPlace, *substTok);
-          newTok->depth++;
-          assert(counter++ < 1000);
-        }
-      }
+      iter = substituteArguments(toks, m->ExpCache.size(), iter, m, tokens);
+      needNextIter = false;
     } else {
       Macro->addTokensToExpansionCache(iter->getFlags(), m->ExpCache);
     }
