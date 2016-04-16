@@ -127,13 +127,7 @@ class MacroInfo {
   ~MacroInfo();
 
 public:
-  struct TokenWithDepth : public Token {
-    TokenWithDepth(const Token &tok, unsigned depth) : Token(tok), depth(depth) {}
-
-    unsigned depth;
-  };
-
-  SmallVector<TokenWithDepth, 8> ExpCache;// TODO add incapsulation
+  SmallVector<Token, 8> ExpCache;// TODO add incapsulation
 
   /// \brief Return the location that the macro was defined at.
   SourceLocation getDefinitionLoc() const { return Location; }
@@ -271,10 +265,9 @@ public:
 
 
   // andy
-  typedef llvm::SmallVector<TokenWithDepth, 8>::const_iterator tokens_with_depth_iterator;
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
   void addTokenToExpansionCache(const Token &Tok, unsigned depth = 0);
-  void addTokensToExpansionCache(unsigned flags, const SmallVector<TokenWithDepth, 8> &srcCache);
+  void addTokensToExpansionCache(unsigned flags, const SmallVector<Token, 8> &srcCache);
 
   void setExpansionCacheValid(bool valid);
   void clearExpansionCache(bool isCached = false) {
@@ -290,14 +283,14 @@ public:
     return IsExpansionCached;
   }
 
-  tokens_with_depth_iterator exp_tokens_begin() const {
+  tokens_iterator exp_tokens_begin() const {
     return ExpCache.begin();
   }
 
-  tokens_with_depth_iterator exp_tokens_end() const
+  tokens_iterator exp_tokens_end() const
   { return ExpCache.end(); }
 
-  const SmallVector<TokenWithDepth, 8>& getExpansionCache() const
+  const SmallVector<Token, 8>& getExpansionCache() const
   { return ExpCache; }
 
   bool cachedExpansionEmpty() const { return ExpCache.empty(); }

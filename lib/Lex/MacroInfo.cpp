@@ -249,7 +249,8 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
 
 // andy
 void MacroInfo::addTokenToExpansionCache(const Token &Tok, unsigned depth) {
-  ExpCache.push_back(TokenWithDepth(Tok, depth));
+  ExpCache.push_back(Tok);
+  ExpCache.back().depth = depth;
 }
 
 void MacroInfo::setExpansionCacheValid(bool valid)
@@ -282,7 +283,7 @@ bool MacroInfo::removeDependency(MacroInfo *depending, MacroInfo *master)
 }
 
 void MacroInfo::addTokensToExpansionCache(unsigned flags,
-       const llvm::SmallVector<TokenWithDepth, 8> &srcCache) {
+       const llvm::SmallVector<Token, 8> &srcCache) {
   if (srcCache.empty())
     return;
 

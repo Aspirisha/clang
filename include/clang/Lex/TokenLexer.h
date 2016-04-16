@@ -15,13 +15,13 @@
 #define LLVM_CLANG_LEX_TOKENLEXER_H
 
 #include "clang/Basic/SourceLocation.h"
+#include <list>
 
 namespace clang {
   class MacroInfo;
   class Preprocessor;
   class Token;
   class MacroArgs;
-
 /// TokenLexer - This implements a lexer that returns tokens from a macro body
 /// or token stream instead of lexing from a character buffer.  This is used for
 /// macro expansion and _Pragma handling, for example.
@@ -101,6 +101,7 @@ class TokenLexer {
 
   // andy
   bool ReadingFromExpansionCache : 1;
+  bool WritingExpansionCache : 1;
   bool noArgumentExpansion : 1;
 
   TokenLexer(const TokenLexer &) = delete;
@@ -169,6 +170,10 @@ private:
   /// Tok.  If this returns true, the caller should immediately return the
   /// token.
   bool PasteTokens(Token &Tok);
+
+  bool PasteTokensToCache(std::list<Token>::iterator lhs,
+                          std::list<Token>::iterator rhs,
+                          Token &res);
 
   /// Expand the arguments of a function-like macro so that we can quickly
   /// return preexpanded tokens from Tokens.
