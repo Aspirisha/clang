@@ -248,9 +248,8 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
 
 
 // andy
-void MacroInfo::addTokenToExpansionCache(const Token &Tok, unsigned depth) {
+void MacroInfo::addTokenToExpansionCache(const Token &Tok) {
   ExpCache.push_back(Tok);
-  ExpCache.back().depth = depth;
 }
 
 void MacroInfo::setExpansionCacheValid(bool valid)

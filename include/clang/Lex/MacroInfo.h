@@ -266,7 +266,7 @@ public:
 
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
-  void addTokenToExpansionCache(const Token &Tok, unsigned depth = 0);
+  void addTokenToExpansionCache(const Token &Tok);
   void addTokensToExpansionCache(unsigned flags, const SmallVector<Token, 8> &srcCache);
 
   void setExpansionCacheValid(bool valid);

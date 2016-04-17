@@ -32,12 +32,16 @@ void DUMP_TOKEN_PTR(T tok, const char * end=" ") {
     llvm::errs() << tok->getIdentifierInfo()->getName();
   else
     llvm::errs() << tok->getName();
+
+  llvm::errs() << " [" << tok->depth << "]";
   llvm::errs() << end;
 }
 
 namespace {
   typedef std::list<Token>::iterator tokens_iterator;
-  typedef SmallVector<std::pair<tokens_iterator, tokens_iterator>, 8> ArgsBounds_t;
+  typedef std::pair<tokens_iterator, tokens_iterator> iter_pair_t;
+  typedef SmallVector<iter_pair_t, 8> ArgsBounds_t;
+
   inline bool isArg(const Token &tok, const MacroInfo *holder) {
     IdentifierInfo *II = tok.getIdentifierInfo();
     return II ? holder->getArgumentNum(II) != -1 : false;
@@ -46,6 +50,24 @@ namespace {
   inline int getArgNum(const Token &tok, const MacroInfo *holder) {
     IdentifierInfo *II = tok.getIdentifierInfo();
     return II ? holder->getArgumentNum(II) : -1;
+  }
+
+  inline bool isNextTokLparen(const tokens_iterator &cur,
+                              const std::list<Token> &tokens) {
+    auto n = std::next(cur);
+    return (n != tokens.end() && n->is(tok::l_paren));
+  };
+
+  inline bool canExpand(const tokens_iterator &cur,
+                        const std::list<Token> &tokens, const Preprocessor &PP) {
+    IdentifierInfo *II = cur->getIdentifierInfo();
+    if (!II)
+      return false;
+    const MacroInfo *m = PP.getMacroInfo(II);
+    if (!m)
+      return false;
+
+    return m->isObjectLike() ? true : isNextTokLparen(cur, tokens);
   }
 
   ArgsBounds_t getMacroArgs(tokens_iterator &iter, const MacroInfo *m) {
@@ -62,7 +84,6 @@ namespace {
     do {
       ++iter;
       argsSize++;
-      DUMP_TOKEN_PTR(iter, " ");
 
       if (iter->is(tok::comma) && notClosedParens == 1) {
         argsBoundaries.push_back(std::make_pair(start, iter));
@@ -74,7 +95,7 @@ namespace {
       }
     } while (notClosedParens > 0);
 
-    llvm::errs() << "\n argsSize = " << argsSize << "\n";
+    llvm::errs() << "argsSize = " << argsSize << "\n";
     // push last argument
     if (m->getNumArgs() > 0) {
       argsBoundaries.push_back(std::make_pair(start, iter));
@@ -84,15 +105,19 @@ namespace {
   }
 
   /**
-   * After this function finishes, iter will point to the token
+   * Returns position of first added token and token after last added;
+   * erases macroname and it's args, so if outputTokens contained
+   * tok1, M(ARG1, ..., ARGN), tok2, and M expands
+   * to E1, ... Ek, new list contains tok1, E1, ..., Ek, tok2 and we return
+   * pair of iterators pointing to E1 and tok2
    */
-  tokens_iterator substituteArguments(const Token *toks, size_t numToks,
+  iter_pair_t substituteArguments(const Token *toks, size_t numToks,
                            tokens_iterator &iter, const MacroInfo *m,
                            std::list<Token> &outputTokens) {
     llvm::errs() << "START\n";
     tokens_iterator startErase = iter;
     auto argsBoundaries = getMacroArgs(iter, m);
-    tokens_iterator endErase = iter;
+    tokens_iterator endErase = iter; // endErase is closing bracket ) of arg list
     tokens_iterator insertTokPlace = std::next(iter);
     llvm::errs() << "START\n";
 
@@ -120,11 +145,35 @@ namespace {
       for (tokens_iterator substTok = currentArgSubstBounds.first;
            substTok != currentArgSubstBounds.second; ++substTok) {
         auto newTok = outputTokens.insert(insertTokPlace, *substTok);
-        newTok->depth++;
+        //newTok->depth++;
         assert(counter++ < 1000);
       }
     }
-    return outputTokens.erase(startErase, std::next(endErase));
+    return {outputTokens.erase(startErase, std::next(endErase)),
+                     insertTokPlace};
+  }
+
+  /**
+   * Returns same as substituteArguments
+   */
+  iter_pair_t expandMacroInStream(tokens_iterator tokenToExpand, const Preprocessor &PP,
+  std::list<Token> ResultToks) {
+    IdentifierInfo *II = tokenToExpand->getIdentifierInfo();
+    const MacroInfo *m = PP.getMacroInfo(II);
+
+    if (m->isFunctionLike()) {
+      const Token *toks = &*m->ExpCache.begin();
+      return substituteArguments(toks, m->ExpCache.size(), tokenToExpand, m, ResultToks);
+    }
+
+    tokens_iterator nextTok = std::next(tokenToExpand);
+    ResultToks.erase(tokenToExpand, nextTok);
+    size_t NumToks = m->ExpCache.size();
+    for (size_t i = 0; i < NumToks; i++) {
+      ResultToks.insert(nextTok, m->ExpCache[i]);
+    }
+
+    return {std::prev(nextTok, NumToks), nextTok};
   }
 }
 
@@ -151,7 +200,7 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   MacroExpansionStart = SourceLocation();
   ReadingFromExpansionCache = false;
   WritingExpansionCache = false;
-
+  TokensFromCache.clear();
   noArgumentExpansion = false;
 
   SourceManager &SM = PP.getSourceManager();
@@ -185,8 +234,12 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
 
   // If this is a function-like macro, expand the arguments and change
   // Tokens to point to the expanded tokens.
-  if (Macro->isFunctionLike() && Macro->getNumArgs())
-    ExpandFunctionArguments();
+  if (Macro->isFunctionLike() && Macro->getNumArgs()) {
+    if (ReadingFromExpansionCache)
+      ExpandFunctionArgumentsFromCache();
+    else
+      ExpandFunctionArguments();
+  }
 
 
   // Mark the macro as currently disabled, so that it is not recursively
@@ -289,10 +342,6 @@ bool TokenLexer::MaybeRemoveCommaBeforeVaArgs(
 /// Expand the arguments of a function-like macro so that we can quickly
 /// return preexpanded tokens from Tokens.
 void TokenLexer::ExpandFunctionArguments() {
-
-  if (ReadingFromExpansionCache && false)
-    return ExpandFunctionArgumentsFromCache();
-
   SmallVector<Token, 128> ResultToks;
 
   // Loop through 'Tokens', expanding them into ResultToks.  Keep
@@ -538,14 +587,11 @@ void TokenLexer::ExpandFunctionArguments() {
 }
 
 void TokenLexer::ExpandFunctionArgumentsFromCache() {
-  typedef std::list<Token>::iterator tokens_iterator;
   typedef std::pair<tokens_iterator, size_t> hashhash_with_level;
 
-  std::list<Token> ResultToks;
-
   auto comparator = [](const hashhash_with_level &lhs, const hashhash_with_level &rhs) {
-    return lhs.second != rhs.second ? lhs.second > rhs.second :
-           lhs.first->depth < rhs.first->depth;
+    return lhs.second != rhs.second ? lhs.second < rhs.second :
+           lhs.first->depth > rhs.first->depth;
   };
 
   std::priority_queue<hashhash_with_level, std::vector<hashhash_with_level>,
@@ -556,9 +602,9 @@ void TokenLexer::ExpandFunctionArgumentsFromCache() {
     int ArgNo = getArgNum(curTok, Macro);
 
     if (curTok.isFromPaste || -1 == ArgNo) { // don't bother, it's not an argument
-      ResultToks.push_back(curTok);
+      TokensFromCache.push_back(curTok);
       if (curTok.is(tok::hashhash)) {
-        q.push(std::make_pair(std::prev(ResultToks.end()), 0));
+        q.push(std::make_pair(std::prev(TokensFromCache.end()), 0));
       }
 
       if (curTok.isOneOf(tok::hash, tok::hashat)) {
@@ -594,7 +640,7 @@ void TokenLexer::ExpandFunctionArgumentsFromCache() {
         if (NextTokGetsSpace)
           Res.setFlag(Token::LeadingSpace);
 
-        ResultToks.push_back(Res);
+        TokensFromCache.push_back(Res);
         i++;
         NextTokGetsSpace = false;
       }
@@ -609,12 +655,12 @@ void TokenLexer::ExpandFunctionArgumentsFromCache() {
 
       tokens_iterator firstSubst;
       for (size_t j = 0; j < NumToks; j++) {
-        ResultToks.push_back(ArgToks[j]);
+        TokensFromCache.push_back(ArgToks[j]);
         if (j == 0)
-          firstSubst = std::prev(ResultToks.end());
+          firstSubst = std::prev(TokensFromCache.end());
 
-        if (ResultToks.back().is(tok::hashhash))
-          ResultToks.back().setKind(tok::unknown);
+        if (TokensFromCache.back().is(tok::hashhash))
+          TokensFromCache.back().setKind(tok::unknown);
       }
 
       // If this token (the macro argument) was supposed to get leading
@@ -636,10 +682,87 @@ void TokenLexer::ExpandFunctionArgumentsFromCache() {
     }
   }
 
-  while (!q.empty()) {
-    hashhash_with_level hash = q.top();
-    //if ()
+  bool haveSomethingToExpand = true;
+
+  auto expand = [this, &q](const tokens_iterator &tokIter,
+              size_t hashLevel) {
+    auto bounds = expandMacroInStream(tokIter, PP, TokensFromCache);
+    for (tokens_iterator tok = bounds.first;
+         tok != bounds.second; ++tok) {
+      if (tok->is(tok::hashhash)) {
+        q.push(std::make_pair(tok, hashLevel));
+      }
+    }
+
+    return bounds;
+  };
+
+  auto expandIfNeeded = [this, &expand](const tokens_iterator &tokIter,
+                                          const hashhash_with_level &hash) {
+    if (tokIter->depth > hash.first->depth ||
+                         !canExpand(tokIter, TokensFromCache, PP))
+      return false;
+
+    llvm::errs() << "Expanding\n";
+    auto res = expand(tokIter, hash.second + 1);
+    for (tokens_iterator it = TokensFromCache.begin(); it != TokensFromCache.end(); ++it) {
+      DUMP_TOKEN_PTR(it);
+    }
+    llvm::errs() << "\n";
+    return true;
+  };
+
+  llvm::errs() << "Before big loop\n";
+  while (haveSomethingToExpand) {
+    while (!q.empty()) {
+      llvm::errs() << "DUMP of top\n";
+      llvm::errs() << "depth = " << q.top().first->depth << "\n";
+
+      hashhash_with_level hash = q.top();
+      tokens_iterator lhs = std::prev(hash.first);
+      tokens_iterator rhs = std::next(hash.first);
+
+      bool lhsExpanded = expandIfNeeded(lhs, hash);
+      bool rhsExpanded = expandIfNeeded(rhs, hash);
+
+      if (!lhsExpanded && !rhsExpanded) { // merge!
+        Token Result; // depth for the result should be 0 for it came from top!
+        PasteTokensToCache(lhs, rhs, Result);
+
+        llvm::errs() << "Res depth is " << Result.depth << "\n";
+
+        auto afterNewIter = std::next(rhs);
+        auto newIter = TokensFromCache.insert(afterNewIter, Result);
+        llvm::errs() << "Can expand it? " << canExpand(newIter, TokensFromCache, PP) << "\n";
+        TokensFromCache.erase(lhs, newIter);
+        q.pop();
+      }
+    }
+
+    haveSomethingToExpand = false;
+    // ok, currently no ## in stream. So, expand what is left, and repeat with ##
+    for (tokens_iterator tok = TokensFromCache.begin(); tok != TokensFromCache.end(); ) {
+      if (!canExpand(tok, TokensFromCache, PP)) {
+        ++tok;
+        continue;
+      }
+      auto bounds = expand(tok, 0);
+      tok = bounds.second;
+      haveSomethingToExpand = true;
+    }
   }
+
+  NumTokens = TokensFromCache.size();
+  SmallVector<Token, 128> ResultToks;
+  for (auto tok : TokensFromCache)
+    ResultToks.push_back(tok);
+
+  // The tokens will be added to Preprocessor's cache and will be removed
+  // when this TokenLexer finishes lexing them.
+  Tokens = PP.cacheMacroExpandedTokens(this, ResultToks);
+
+  // The preprocessor cache of macro expanded tokens owns these tokens,not us.
+  OwnsTokens = false; // what for?
 }
 
 /// \brief Checks if two tokens form wide string literal.
@@ -1252,11 +1375,6 @@ void TokenLexer::makeCachedExpansion() {
     tokens.push_back(Macro->tokens()[i]);
   }
 
-  auto isNextTokLparen = [&](const tokens_iterator cur) {
-    auto n = std::next(cur, 1);
-    return (n != tokens.end() && n->is(tok::l_paren));
-  };
-
   bool needNextIter;
 
   auto stepIfNeeded = [&needNextIter](tokens_iterator &iter) {
@@ -1300,7 +1418,7 @@ void TokenLexer::makeCachedExpansion() {
 
     MacroInfo *m = PP.getMacroInfo(II);
     if (ArgNum != -1 || !m || !m->isExpansionCacheValid()
-        || (m->isFunctionLike() && !isNextTokLparen(iter))) {
+        || (m->isFunctionLike() && !isNextTokLparen(iter, tokens))) {
       Macro->addTokenToExpansionCache(*iter);
       continue;
     }
@@ -1308,7 +1426,9 @@ void TokenLexer::makeCachedExpansion() {
     // expand function like macro only if it has "(" as nex token
     if (m->isFunctionLike()) {
       const Token *toks = &*m->ExpCache.begin();
-      iter = substituteArguments(toks, m->ExpCache.size(), iter, m, tokens);
+      auto bounds = substituteArguments(toks, m->ExpCache.size(), iter, m, tokens);
+
+      iter = bounds.first;
       needNextIter = false;
     } else {
       Macro->addTokensToExpansionCache(iter->getFlags(), m->ExpCache);

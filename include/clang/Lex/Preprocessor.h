@@ -1757,6 +1757,7 @@ private:
                                   ArrayRef<Token> tokens);
   void removeCachedMacroExpandedTokensOfLastLexer();
   friend void TokenLexer::ExpandFunctionArguments();
+  friend void TokenLexer::ExpandFunctionArgumentsFromCache();
 
   /// Determine whether the next preprocessor token to be
   /// lexed is a '('.  If so, consume the token and return true, if not, this
