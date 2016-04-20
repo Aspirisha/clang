@@ -419,7 +419,7 @@ bool Preprocessor::isNextPPTokenLParen() {
 bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
                                                  const MacroDefinition &M) {
   MacroInfo *MI = M.getMacroInfo();
-  llvm::errs() << "Expanding macro: " << Identifier.getIdentifierInfo()->getName() << "\n";
+  //llvm::errs() << "Expanding macro: " << Identifier.getIdentifierInfo()->getName() << "\n";
   // If this is a macro expansion in the "#if !defined(x)" line for the file,
   // then the macro could expand to different things in other contexts, we need
   // to disable the optimization in this case.
@@ -741,7 +741,9 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
   SourceLocation TooManyArgsLoc;
 
   unsigned NumActuals = 0;
+  //llvm::errs() << "===========================\nReadFunctionLikeMacroArgs()\n";
   while (Tok.isNot(tok::r_paren)) {
+
     if (ContainsCodeCompletionTok && Tok.isOneOf(tok::eof, tok::eod))
       break;
 
@@ -759,7 +761,8 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       // Read arguments as unexpanded tokens.  This avoids issues, e.g., where
       // an argument value in a macro could expand to ',' or '(' or ')'.
       LexUnexpandedToken(Tok);
-
+     // llvm::errs() << (Tok.getIdentifierInfo() ?
+      //                 Tok.getIdentifierInfo()->getName() : Tok.getName()) << " ";
       if (Tok.isOneOf(tok::eof, tok::eod)) { // "#if f(<eof>" & "#if f(\n"
         if (!ContainsCodeCompletionTok) {
           Diag(MacroName, diag::err_unterm_macro_invoc);
@@ -975,6 +978,7 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
     return nullptr;
   }
 
+  //llvm::errs() << "\n=================================\n";
   return MacroArgs::create(MI, ArgTokens, isVarargsElided, *this);
 }
 

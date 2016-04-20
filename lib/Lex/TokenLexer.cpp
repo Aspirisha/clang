@@ -17,7 +17,7 @@
 #include "clang/Lex/MacroArgs.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Preprocessor.h"
-#include <queue>
+#include <deque>
 using namespace clang;
 
 #define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
@@ -33,11 +33,13 @@ void DUMP_TOKEN_PTR(T tok, const char * end=" ") {
   else
     llvm::errs() << tok->getName();
 
-  llvm::errs() << " [" << tok->depth << "]";
+  llvm::errs() << " [" << tok->isNestedHash << "]";
   llvm::errs() << end;
 }
 
 namespace {
+  std::list<Token> MACRO_STACK;
+
   typedef std::list<Token>::iterator tokens_iterator;
   typedef std::pair<tokens_iterator, tokens_iterator> iter_pair_t;
   typedef SmallVector<iter_pair_t, 8> ArgsBounds_t;
@@ -73,7 +75,7 @@ namespace {
   ArgsBounds_t getMacroArgs(tokens_iterator &iter, const MacroInfo *m) {
     IdentifierInfo *II = iter->getIdentifierInfo();
 
-    llvm::errs() << "Name = " <<  II->getName() << "\n";
+    //llvm::errs() << "Name = " <<  II->getName() << "\n";
     SmallVector<std::pair<tokens_iterator, tokens_iterator>, 8> argsBoundaries;
 
     // for every added token, check if identifier is an argument of body macro.
@@ -95,7 +97,7 @@ namespace {
       }
     } while (notClosedParens > 0);
 
-    llvm::errs() << "argsSize = " << argsSize << "\n";
+    //llvm::errs() << "argsSize = " << argsSize << "\n";
     // push last argument
     if (m->getNumArgs() > 0) {
       argsBoundaries.push_back(std::make_pair(start, iter));
@@ -114,56 +116,61 @@ namespace {
   iter_pair_t substituteArguments(const Token *toks, size_t numToks,
                            tokens_iterator &iter, const MacroInfo *m,
                            std::list<Token> &outputTokens) {
-    llvm::errs() << "START\n";
     tokens_iterator startErase = iter;
     auto argsBoundaries = getMacroArgs(iter, m);
     tokens_iterator endErase = iter; // endErase is closing bracket ) of arg list
     tokens_iterator insertTokPlace = std::next(iter);
-    llvm::errs() << "START\n";
 
     for (size_t i = 0; i < numToks; i++) {
       IdentifierInfo *II = toks[i].getIdentifierInfo();
 
       int ArgNo = II ? m->getArgumentNum(II) : -1;
-      DUMP_TOKEN_PTR(toks + i, "\n");
+      //DUMP_TOKEN_PTR(toks + i, "\n");
 
       /* TODO also test that toks[i] has same depth as m, if it's deeper,
        definitely it's not an argument so don't expand is m's arg */
       if (ArgNo == -1) {
         //Macro->addTokenToExpansionCache(toks[i], m->ExpDepths[i] + 1);
         auto newTok = outputTokens.insert(insertTokPlace, toks[i]);
-        newTok->depth++;
+        if (toks[i].is(tok::hashhash))
+          newTok->isNestedHash = true;
         continue;
       }
 
 
       // current token is argument of in-body macro. Expand it!
-      llvm::errs() << m->getNumArgs() << " " << ArgNo << " " << argsBoundaries.size() << "\n";
+      //llvm::errs() << m->getNumArgs() << " " << ArgNo << " " << argsBoundaries.size() << "\n";
       auto currentArgSubstBounds = argsBoundaries[ArgNo];
 
       int counter = 0;
       for (tokens_iterator substTok = currentArgSubstBounds.first;
            substTok != currentArgSubstBounds.second; ++substTok) {
-        auto newTok = outputTokens.insert(insertTokPlace, *substTok);
-        //newTok->depth++;
+        outputTokens.insert(insertTokPlace, *substTok);
+        // if ## here, it's unknown for it will be from arg
         assert(counter++ < 1000);
       }
+
+
     }
     return {outputTokens.erase(startErase, std::next(endErase)),
                      insertTokPlace};
   }
 
   /**
-   * Returns same as substituteArguments
+   * Returns same as substituteArguments; FULLY expands (until it's impossible)
    */
   iter_pair_t expandMacroInStream(tokens_iterator tokenToExpand, const Preprocessor &PP,
   std::list<Token> ResultToks) {
+    iter_pair_t bounds = {tokenToExpand, std::next(tokenToExpand)};
+
     IdentifierInfo *II = tokenToExpand->getIdentifierInfo();
     const MacroInfo *m = PP.getMacroInfo(II);
 
     if (m->isFunctionLike()) {
       const Token *toks = &*m->ExpCache.begin();
-      return substituteArguments(toks, m->ExpCache.size(), tokenToExpand, m, ResultToks);
+      return substituteArguments(toks, m->ExpCache.size(), tokenToExpand,
+                                 m, ResultToks);
+
     }
 
     tokens_iterator nextTok = std::next(tokenToExpand);
@@ -185,6 +192,8 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   // associated with it.
   destroy();
 
+  if (MI)
+    MACRO_STACK.push_back(Tok);
   Macro = MI;
   ActualArgs = Actuals;
   CurToken = 0;
@@ -203,6 +212,8 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   TokensFromCache.clear();
   noArgumentExpansion = false;
 
+  //llvm::errs() << "Enter token: ";
+  //DUMP_TOKEN_PTR(&Tok, "\n");
   SourceManager &SM = PP.getSourceManager();
   MacroStartSLocOffset = SM.getNextLocalOffset();
 
@@ -235,9 +246,9 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   // If this is a function-like macro, expand the arguments and change
   // Tokens to point to the expanded tokens.
   if (Macro->isFunctionLike() && Macro->getNumArgs()) {
-    if (ReadingFromExpansionCache)
-      ExpandFunctionArgumentsFromCache();
-    else
+    //if (ReadingFromExpansionCache)
+     // ExpandFunctionArgumentsFromCache();
+    //else
       ExpandFunctionArguments();
   }
 
@@ -436,10 +447,20 @@ void TokenLexer::ExpandFunctionArguments() {
       continue;
     }
 
+
     // If it is not the LHS/RHS of a ## operator, we must pre-expand the
     // argument and substitute the expanded tokens into the result.  This is
     // C99 6.10.3.1p1.
-    if (!PasteBefore && !PasteAfter || ReadingFromExpansionCache) { // FIXME this definitely will cause bugs somwhere
+    if (ReadingFromExpansionCache) {
+      llvm::errs() << "PasteBefore = " << PasteBefore << " PasteAfter = " << PasteAfter << "\n";
+      if (PasteBefore) {
+        PasteBefore = !Tokens[i-1].isNestedHash;
+      }
+      if (PasteAfter) {
+        PasteAfter = !Tokens[i+1].isNestedHash;
+      }
+    }
+    if (!PasteBefore && !PasteAfter) {
       const Token *ResultArgToks;
 
       // Only preexpand the argument if it could possibly need it.  This
@@ -587,15 +608,10 @@ void TokenLexer::ExpandFunctionArguments() {
 }
 
 void TokenLexer::ExpandFunctionArgumentsFromCache() {
-  typedef std::pair<tokens_iterator, size_t> hashhash_with_level;
+  llvm::errs() << "ExpandFunctionArgumentsFromCache for ";
+  DUMP_TOKEN_PTR(MACRO_STACK.rbegin(), "\n");
 
-  auto comparator = [](const hashhash_with_level &lhs, const hashhash_with_level &rhs) {
-    return lhs.second != rhs.second ? lhs.second < rhs.second :
-           lhs.first->depth > rhs.first->depth;
-  };
-
-  std::priority_queue<hashhash_with_level, std::vector<hashhash_with_level>,
-          decltype(comparator)> q(comparator);
+  std::deque<tokens_iterator> q;
 
   for (size_t i = 0; i < Macro->ExpCache.size(); i++) {
     Token curTok = Macro->ExpCache[i];
@@ -604,7 +620,7 @@ void TokenLexer::ExpandFunctionArgumentsFromCache() {
     if (curTok.isFromPaste || -1 == ArgNo) { // don't bother, it's not an argument
       TokensFromCache.push_back(curTok);
       if (curTok.is(tok::hashhash)) {
-        q.push(std::make_pair(std::prev(TokensFromCache.end()), 0));
+        q.push_back(std::prev(TokensFromCache.end()));
       }
 
       if (curTok.isOneOf(tok::hash, tok::hashat)) {
@@ -684,13 +700,12 @@ void TokenLexer::ExpandFunctionArgumentsFromCache() {
 
   bool haveSomethingToExpand = true;
 
-  auto expand = [this, &q](const tokens_iterator &tokIter,
-              size_t hashLevel) {
+  auto expand = [this, &q](const tokens_iterator &tokIter) {
     auto bounds = expandMacroInStream(tokIter, PP, TokensFromCache);
     for (tokens_iterator tok = bounds.first;
          tok != bounds.second; ++tok) {
       if (tok->is(tok::hashhash)) {
-        q.push(std::make_pair(tok, hashLevel));
+        q.push_back(tok);
       }
     }
 
@@ -698,44 +713,46 @@ void TokenLexer::ExpandFunctionArgumentsFromCache() {
   };
 
   auto expandIfNeeded = [this, &expand](const tokens_iterator &tokIter,
-                                          const hashhash_with_level &hash) {
-    if (tokIter->depth > hash.first->depth ||
-                         !canExpand(tokIter, TokensFromCache, PP))
+                                          const tokens_iterator &hash) {
+    if (!hash->isNestedHash || !canExpand(tokIter, TokensFromCache, PP))
       return false;
 
     llvm::errs() << "Expanding\n";
-    auto res = expand(tokIter, hash.second + 1);
-    for (tokens_iterator it = TokensFromCache.begin(); it != TokensFromCache.end(); ++it) {
-      DUMP_TOKEN_PTR(it);
-    }
+    auto res = expand(tokIter);
+
     llvm::errs() << "\n";
     return true;
   };
 
   llvm::errs() << "Before big loop\n";
+  for (tokens_iterator it = TokensFromCache.begin(); it != TokensFromCache.end(); ++it) {
+    DUMP_TOKEN_PTR(it);
+  }
   while (haveSomethingToExpand) {
     while (!q.empty()) {
       llvm::errs() << "DUMP of top\n";
-      llvm::errs() << "depth = " << q.top().first->depth << "\n";
+      llvm::errs() << "isNestedHash = " << q.front()->isNestedHash << "\n";
 
-      hashhash_with_level hash = q.top();
-      tokens_iterator lhs = std::prev(hash.first);
-      tokens_iterator rhs = std::next(hash.first);
-
+      tokens_iterator hash = q.front();
+      tokens_iterator lhs = std::prev(hash);
+      tokens_iterator rhs = std::next(hash);
+      llvm::errs() << "before expand\n";
+      for (tokens_iterator it = TokensFromCache.begin(); it != TokensFromCache.end(); ++it) {
+        DUMP_TOKEN_PTR(it);
+      }
       bool lhsExpanded = expandIfNeeded(lhs, hash);
       bool rhsExpanded = expandIfNeeded(rhs, hash);
 
-      if (!lhsExpanded && !rhsExpanded) { // merge!
-        Token Result; // depth for the result should be 0 for it came from top!
+      if (!lhsExpanded && !rhsExpanded) { // it's not necessary
+        Token Result;
         PasteTokensToCache(lhs, rhs, Result);
-
-        llvm::errs() << "Res depth is " << Result.depth << "\n";
 
         auto afterNewIter = std::next(rhs);
         auto newIter = TokensFromCache.insert(afterNewIter, Result);
-        llvm::errs() << "Can expand it? " << canExpand(newIter, TokensFromCache, PP) << "\n";
+        llvm::errs() << "Can expand it? " <<
+        canExpand(newIter, TokensFromCache, PP) << "\n";
         TokensFromCache.erase(lhs, newIter);
-        q.pop();
+        q.pop_front();
       }
     }
 
@@ -746,7 +763,7 @@ void TokenLexer::ExpandFunctionArgumentsFromCache() {
         ++tok;
         continue;
       }
-      auto bounds = expand(tok, 0);
+      auto bounds = expand(tok);
       tok = bounds.second;
       haveSomethingToExpand = true;
     }
@@ -791,6 +808,7 @@ bool TokenLexer::Lex(Token &Tok) {
 
     if (Macro && !Macro->isExpansionCacheValid()) {
       makeCachedExpansion();
+      MACRO_STACK.pop_back();
     }
 
     bool result = PP.HandleEndOfTokenLexer(Tok);
@@ -1369,12 +1387,13 @@ void TokenLexer::makeCachedExpansion() {
   using namespace std;
 
   WritingExpansionCache = true;
-  llvm::errs() << "makeCachedExpansion()\n";
+  llvm::errs() << "makeCachedExpansion() for ";
+  assert(MACRO_STACK.size());
+  DUMP_TOKEN_PTR(MACRO_STACK.rbegin(), "\n");
   list<Token> tokens;
   for (size_t i = 0; i < Macro->tokens().size(); i++) {
     tokens.push_back(Macro->tokens()[i]);
   }
-
   bool needNextIter;
 
   auto stepIfNeeded = [&needNextIter](tokens_iterator &iter) {
@@ -1394,21 +1413,50 @@ void TokenLexer::makeCachedExpansion() {
 
     // ok, current token is not Macro's argument. If next is ## and next after
     // next is not Macro's argument also, then we can just merge them
-    if (ArgNum == -1 && nextTokIsHashHash) {
-      llvm::errs() << succ->depth << "\n";
+    if (nextTokIsHashHash) {
       auto succ2 = next(iter, 2);
-      assert (succ2 != tokens.end() && "ERROR! ## can't be last in the token stream\n");
-      if (!isArg(*succ2, Macro) && (succ->depth <= iter->depth) &&
-              (succ->depth <= succ2->depth)) {
+      assert (succ2 != tokens.end() &&
+              "ERROR! ## can't be last in the token stream\n");
+      if (ArgNum == -1 && !isArg(*succ2, Macro)) {
         llvm::errs() << "OLOLO\n";
         Token Result; // depth for the result should be 0 for it came from top!
+
+        if (succ->isNestedHash) { // preexpand args
+          llvm::errs() << "Nested!\n";
+          for (auto cur = iter; cur != tokens.end(); ++cur) {
+            DUMP_TOKEN_PTR(cur);
+          }
+          llvm::errs() << "\n";
+          // expand first argument if it's possible
+          if (canExpand(iter, tokens, PP)) {
+            auto p = expandMacroInStream(iter, PP, tokens);
+            iter = p.first;
+            continue;
+          }
+          // else expand second argument if it's possible (we can do it in loop)
+          while (canExpand(succ2, tokens, PP)) {
+            llvm::errs() << "expanding right\n";
+            auto p = expandMacroInStream(succ2, PP, tokens);
+            for (auto cur = iter; cur != tokens.end(); ++cur) {
+              DUMP_TOKEN_PTR(cur);
+            }
+            succ2 = p.first;
+          }
+        }
         PasteTokensToCache(iter, succ2, Result);
 
         auto afterNewIter = next(succ2);
-        tokens.insert(afterNewIter, Result);
+        auto newIter = tokens.insert(afterNewIter, Result);
+        iter = tokens.erase(iter, newIter);
+        needNextIter = false;
+      } else {
+        // we are here so we can't apply ##. so, skip both it's operands
+        Macro->addTokenToExpansionCache(*iter);
+        Macro->addTokenToExpansionCache(*succ);
+        Macro->addTokenToExpansionCache(*succ2);
         iter = succ2; // so that iter++ will be newly pasted token
-        continue;
       }
+      continue;
     }
 
     if (!II) {
@@ -1423,10 +1471,18 @@ void TokenLexer::makeCachedExpansion() {
       continue;
     }
 
+
     // expand function like macro only if it has "(" as nex token
+    // here now we assume that if there is ## following function macro call,
+    // it's always nested. It's almost safe, since if it's not nested, it's a bug, for
+    // preprocessor will produce invalid token concatenating ) with anything
     if (m->isFunctionLike()) {
       const Token *toks = &*m->ExpCache.begin();
-      auto bounds = substituteArguments(toks, m->ExpCache.size(), iter, m, tokens);
+     /* for (size_t i = 0; i < m->ExpCache.size(); i++){
+        DUMP_TOKEN_PTR(toks + i);
+      }*/
+      auto bounds = substituteArguments(toks, m->ExpCache.size(), iter, m,
+                                        tokens);
 
       iter = bounds.first;
       needNextIter = false;

@@ -288,9 +288,6 @@ void MacroInfo::addTokensToExpansionCache(unsigned flags,
 
   size_t firstAddedToken = ExpCache.size();
   ExpCache.append(srcCache.begin(), srcCache.end());
-  for (auto i = ExpCache.begin() + firstAddedToken; i != ExpCache.end(); i++) {
-    i->depth++;
-  }
 
   if ((flags & Token::TokenFlags::LeadingSpace)) {
     ExpCache[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);

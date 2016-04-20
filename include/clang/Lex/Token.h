@@ -87,10 +87,11 @@ public:
                                 // macro stringizing or charizing operator.
   };
 
-  Token() : depth(0), isFromPaste(false) { }
+  Token() : isNestedHash(false), isFromPaste(false) { }
   // andy
-  unsigned depth;
+  bool isNestedHash : 1;
   bool isFromPaste : 1;
+  int expansionFlag : 2;
 
   tok::TokenKind getKind() const { return Kind; }
   void setKind(tok::TokenKind K) { Kind = K; }
@@ -176,8 +177,9 @@ public:
     Flags = 0;
     PtrData = nullptr;
     UintData = 0;
-    depth = 0;
     isFromPaste = false;
+    isNestedHash = false;
+    expansionFlag = 1;
     Loc = SourceLocation().getRawEncoding();
   }
 
