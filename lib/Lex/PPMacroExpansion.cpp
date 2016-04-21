@@ -518,11 +518,6 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     PropagateLineStartLeadingSpaceInfo(Identifier);
     ++NumFastMacroExpanded;
 
-    // andy
-    if (!MI->isExpansionCacheValid()) {
-      MI->clearExpansionCache(true);
-    }
-
     return false;
   } else if (MI->getNumTokens() == 1 &&
              isTrivialSingleTokenExpansion(MI, Identifier.getIdentifierInfo(),

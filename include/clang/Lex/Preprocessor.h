@@ -562,7 +562,7 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// reused for quick allocation.
   MacroArgs *MacroArgCache;
   friend class MacroArgs;
-
+  friend void TokenLexer::makeCachedExpansion();
   /// For each IdentifierInfo used in a \#pragma push_macro directive,
   /// we keep a MacroInfo stack used to restore the previous macro value.
   llvm::DenseMap<IdentifierInfo*, std::vector<MacroInfo*> > PragmaPushMacroInfo;

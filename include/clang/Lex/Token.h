@@ -91,7 +91,16 @@ public:
   // andy
   bool isNestedHash : 1;
   bool isFromPaste : 1;
-  int expansionFlag : 2;
+  bool isUnexpandableArg : 1;
+  unsigned expansionFlag : 2;
+
+  bool operator==(const Token &other) const {
+    return (PtrData == other.PtrData && UintData == other.UintData && Kind == other.Kind);
+  }
+
+  bool operator!=(const Token &other) const {
+    return !(*this == other);
+  }
 
   tok::TokenKind getKind() const { return Kind; }
   void setKind(tok::TokenKind K) { Kind = K; }
@@ -179,6 +188,7 @@ public:
     UintData = 0;
     isFromPaste = false;
     isNestedHash = false;
+    isUnexpandableArg = false;
     expansionFlag = 1;
     Loc = SourceLocation().getRawEncoding();
   }

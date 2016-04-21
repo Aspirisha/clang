@@ -30,6 +30,7 @@ MacroInfo::MacroInfo(SourceLocation DefLoc)
     IsAllowRedefinitionsWithoutWarning(false),
     IsWarnIfUnused(false),
     FromASTFile(false),
+    CanBeCached(true),
     UsedForHeaderGuard(false),
     IsExpansionCached(false)
 {
@@ -279,21 +280,6 @@ bool MacroInfo::removeDependency(MacroInfo *depending, MacroInfo *master)
 {
   return (depending->DependsOnMIs.erase(master) &&
           master->DependingOnThisMIs.erase(depending));
-}
-
-void MacroInfo::addTokensToExpansionCache(unsigned flags,
-       const llvm::SmallVector<Token, 8> &srcCache) {
-  if (srcCache.empty())
-    return;
-
-  size_t firstAddedToken = ExpCache.size();
-  ExpCache.append(srcCache.begin(), srcCache.end());
-
-  if ((flags & Token::TokenFlags::LeadingSpace)) {
-    ExpCache[firstAddedToken].setFlag(Token::TokenFlags::LeadingSpace);
-  } else {
-    ExpCache[firstAddedToken].clearFlag(Token::TokenFlags::LeadingSpace);
-  }
 }
 
 MacroInfo::~MacroInfo() {

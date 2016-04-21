@@ -115,8 +115,9 @@ class MacroInfo {
   // andy: if currently expansion cache is valid. Currently only
   // for function-like macros
   bool IsExpansionCached : 1;
-  mutable size_t CurTempCache;
-
+  SmallVector<Token, 8> ExpCache;
+  bool CanBeCached : 1; // if expansion leads to ## with arguments of this macro,
+  // hell no, it can't
 
   llvm::SmallPtrSet<MacroInfo*, 8> DependsOnMIs;
   llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
@@ -127,8 +128,6 @@ class MacroInfo {
   ~MacroInfo();
 
 public:
-  SmallVector<Token, 8> ExpCache;// TODO add incapsulation
-
   /// \brief Return the location that the macro was defined at.
   SourceLocation getDefinitionLoc() const { return Location; }
 
@@ -263,23 +262,33 @@ public:
   }
 
 
-
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
   void addTokenToExpansionCache(const Token &Tok);
-  void addTokensToExpansionCache(unsigned flags, const SmallVector<Token, 8> &srcCache);
+  void resetCache(const SmallVector<Token, 8> &Toks) {
+    ExpCache = Toks;
+  }
+
+  void resetCache(SmallVector<Token, 8> && Toks) {
+    ExpCache = std::move(Toks);
+  }
 
   void setExpansionCacheValid(bool valid);
-  void clearExpansionCache(bool isCached = false) {
+  void clearExpansionCache() {
     ExpCache.clear();
-    IsExpansionCached = isCached;
   }
   static bool addDependency(MacroInfo *depending, MacroInfo *master);
   static bool removeDependency(MacroInfo *depending, MacroInfo *master);
 
+  bool canBeCached() const {
+    return CanBeCached;
+  }
 
-  bool isExpansionCacheValid() const
-  {
+  void setCanBeCached(bool canBeCached) {
+    CanBeCached = canBeCached;
+  }
+
+  bool isExpansionCacheValid() const {
     return IsExpansionCached;
   }
 
