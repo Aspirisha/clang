@@ -265,9 +265,9 @@ public:
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
   void addTokenToExpansionCache(const Token &Tok);
-  void resetCache(const SmallVector<Token, 8> &Toks) {
+  /*void resetCache(const SmallVector<Token, 8> &Toks) {
     ExpCache = Toks;
-  }
+  }*/
 
   void resetCache(SmallVector<Token, 8> && Toks) {
     ExpCache = std::move(Toks);
