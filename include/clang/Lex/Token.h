@@ -87,12 +87,13 @@ public:
                                 // macro stringizing or charizing operator.
   };
 
-  Token() : isNestedHash(false), isFromPaste(false) { }
+  Token() : isNestedHash(false), isFromPaste(false), isUnexpandableArg(false),
+            depth(0) { }
   // andy
   bool isNestedHash : 1;
   bool isFromPaste : 1;
   bool isUnexpandableArg : 1;
-  unsigned expansionFlag : 2;
+  unsigned depth;
 
   bool operator==(const Token &other) const {
     return (PtrData == other.PtrData && UintData == other.UintData && Kind == other.Kind);
@@ -189,7 +190,7 @@ public:
     isFromPaste = false;
     isNestedHash = false;
     isUnexpandableArg = false;
-    expansionFlag = 1;
+    depth = 0;
     Loc = SourceLocation().getRawEncoding();
   }
 

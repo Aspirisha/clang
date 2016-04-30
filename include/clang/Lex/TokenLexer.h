@@ -27,6 +27,11 @@ namespace clang {
 /// macro expansion and _Pragma handling, for example.
 ///
 class TokenLexer {
+  enum LexingMode {
+    CACHE_CREATION,
+    GUARD_EXPANSION,
+    NORMAL
+  };
   /// Macro - The macro we are expanding from.  This is null if expanding a
   /// token stream.
   ///
@@ -101,13 +106,14 @@ class TokenLexer {
 
   // andy
   bool ReadingFromExpansionCache : 1;
-  bool WritingExpansionCache : 1;
   bool noArgumentExpansion : 1;
+  
   std::list<Token> TokensFromCache;
 
   TokenLexer(const TokenLexer &) = delete;
   void operator=(const TokenLexer &) = delete;
 public:
+  LexingMode lexingMode;
   /// Create a TokenLexer for the specified macro with the specified actual
   /// arguments.  Note that this ctor takes ownership of the ActualArgs pointer.
   /// ILEnd specifies the location of the ')' for a function-like macro or the
