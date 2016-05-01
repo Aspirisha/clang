@@ -543,7 +543,6 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
 
     // create expansion cache
     if (!MI->isExpansionCacheValid()) {
-      //Identifier.depth = 0;
       MI->addTokenToExpansionCache(Identifier);
       MI->setExpansionCacheValid(true);
     }

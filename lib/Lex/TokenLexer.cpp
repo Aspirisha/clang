@@ -17,7 +17,6 @@
 #include "clang/Lex/MacroArgs.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Preprocessor.h"
-#include <queue>
 using namespace clang;
 
 #define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
@@ -26,7 +25,7 @@ using namespace clang;
                           llvm::errs() << "raw = " << X.getRawEncoding() << "\n";\
                           llvm::errs() << "\n";
 
-static int isCaching = 0;
+//static int isCaching = 0;
 
 template <class T>
 void DUMP_TOKEN_PTR(T tok, const char * end=" ") {
@@ -86,16 +85,21 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   // let's consider simplest case
   ReadingFromExpansionCache = Macro->isExpansionCacheValid();
   if (ReadingFromExpansionCache) {
-    Tokens = &*Macro->exp_tokens_begin();
-    NumTokens = Macro->getExpansionCache().size();
+    if (!Macro->allNonMacroIIsAreValid(PP)) {
+      ReadingFromExpansionCache = false;
+      Macro->setExpansionCacheValid(false);
+    } else {
+      Tokens = &*Macro->exp_tokens_begin();
+      NumTokens = Macro->getExpansionCache().size();
 
-    //llvm::errs() << "Reading from cache:\n";
-   /* for (int i = 0; i < NumTokens; i++) {
-      DUMP_TOKEN_PTR(Tokens + i);
-      assert(!Tokens[i].isUnexpandableArg);
+      //llvm::errs() << "Reading from cache:\n";
+      /* for (int i = 0; i < NumTokens; i++) {
+         DUMP_TOKEN_PTR(Tokens + i);
+         assert(!Tokens[i].isUnexpandableArg);
+       }
+
+       llvm::errs() << "\n";*/
     }
-
-    llvm::errs() << "\n";*/
   }
 
 
@@ -504,7 +508,7 @@ void TokenLexer::ExpandFunctionArguments() {
     DUMP_TOKEN_PTR(iter);
   llvm::errs() << "\n\n";*/
   if (ReadingFromExpansionCache) {
-    std::vector<Token> tokens;
+    SmallVector<Token, 128> tokens;
     SmallVector<unsigned, 8> guardsStack;
     SmallVector<bool, 8> hadArgSinceLastGuard;
 
@@ -679,7 +683,16 @@ bool TokenLexer::Lex(Token &Tok) {
     //llvm::errs() << "pasting!\n";
     //DUMP_TOKEN_PTR(&Tok);
     //llvm::errs() << "\n";
-    if (PasteTokens(Tok))
+    bool result = PasteTokens(Tok);
+    if (Macro && !Macro->isExpansionCacheValid() && Tok.isAnyIdentifier()) {
+      IdentifierInfo *II = Tok.getIdentifierInfo();
+      if (!II->hasMacroDefinition())
+        Macro->addNonMacroII(Tok.getIdentifierInfo());
+      else
+        MacroInfo::addDependency(Macro, PP.getMacroInfo(II));
+    }
+
+    if (result)
       return true;
 
     TokenIsFromPaste = true;
@@ -743,6 +756,13 @@ bool TokenLexer::Lex(Token &Tok) {
 
     if (!DisableMacroExpansion && II->isHandleIdentifierCase()) {
       //if (PP.getMacroInfo(II))
+
+      if (Macro && !Macro->isExpansionCacheValid()) {
+        if (II->hasMacroDefinition())
+          MacroInfo::addDependency(Macro, PP.getMacroInfo(II));
+        else if (Tok.isAnyIdentifier())
+          Macro->addNonMacroII(II);
+      }
       return PP.HandleIdentifier(Tok);
     }
   }
@@ -1099,7 +1119,6 @@ void TokenLexer::PropagateLineStartLeadingSpaceInfo(Token &Result) {
 }
 
 void TokenLexer::makeCachedExpansion() {
-  isCaching++;
   //llvm::errs() << "makeCachedExpansion() for ";
  // assert(MACRO_STACK.size());
   //DUMP_TOKEN_PTR(MACRO_STACK.rbegin(), "\n");
@@ -1127,11 +1146,6 @@ void TokenLexer::makeCachedExpansion() {
     tokens.push_back(Macro->tokens()[i]);
     if (getArgNum(tokens.back(), Macro) != -1)
       tokens.back().isUnexpandableArg = true;
-
-    /*if (tokens.back().is(tok::cache_guard)) {
-      tokens.back().depth++;
-      continue;
-    }*/
   }
 
   /*for (auto tok = tokens.begin(); tok != tokens.end(); ++tok){
@@ -1149,23 +1163,7 @@ void TokenLexer::makeCachedExpansion() {
     Tok.isUnexpandableArg = false;
   } while (Result.back().isNot(tok::eof));
   Result.pop_back();
-  assert(lexingMode != GUARD_EXPANSION);
-  /*for (size_t i = 0; i < Result.size(); i++) {
-    bool hasConcatWithArg = Result[i].is(tok::hashhash) &&
-            (Result[i - 1].isUnexpandableArg || Result[i + 1].isUnexpandableArg);
-    bool hasStringification = Result[i].is(tok::hash) &&
-            Result[i + 1].isUnexpandableArg;
-
-    if (hasConcatWithArg || hasStringification) { // have smth to paste?
-      Macro->setCanBeCached(false);
-      llvm::errs() << "FAILED to cache:\n";
-      for (auto tok = Result.begin(); tok != Result.end(); ++tok) {
-        DUMP_TOKEN_PTR(tok);
-      }
-      llvm::errs() << "\n\n";
-      return;
-    }
-  }*/
+  assert(lexingMode != GUARD_EXPANSION && "Sanity check failed!");
 
 
   /*llvm::errs() << "Result: \n";
@@ -1176,6 +1174,5 @@ void TokenLexer::makeCachedExpansion() {
 
   Macro->resetCache(std::move(Result));
   Macro->setExpansionCacheValid(true);
-  isCaching--;
   //llvm::errs() << "END of makeCachedExpansion()\n";
 }

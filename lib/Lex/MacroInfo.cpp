@@ -261,8 +261,7 @@ void MacroInfo::setExpansionCacheValid(bool valid)
   IsExpansionCached = valid;
   if (!valid) {
     ExpCache.clear();
-    // pessimistic
-    DependsOnMIs.clear();
+    NonMacroInBodyIIs.clear();
     for (auto dep : DependingOnThisMIs)
       dep->setExpansionCacheValid(false);
   }
@@ -271,16 +270,22 @@ void MacroInfo::setExpansionCacheValid(bool valid)
 bool MacroInfo::addDependency(MacroInfo *depending, MacroInfo *master)
 {
   assert(depending && master && "Should not insert nullptr dependecies");
-  bool res1 = depending->DependsOnMIs.insert(master).second;
   bool res2 = master->DependingOnThisMIs.insert(depending).second;
-  return res1 && res2;
+  return res2;
 }
 
-bool MacroInfo::removeDependency(MacroInfo *depending, MacroInfo *master)
-{
-  return (depending->DependsOnMIs.erase(master) &&
-          master->DependingOnThisMIs.erase(depending));
+bool MacroInfo::allNonMacroIIsAreValid(const Preprocessor &PP) const {
+  for (const IdentifierInfo *II : NonMacroInBodyIIs) {
+    if (nullptr != PP.getMacroInfo(II))
+      return false;
+  }
+  return true;
 }
+
+void MacroInfo::addNonMacroII(const IdentifierInfo *II) {
+  NonMacroInBodyIIs.insert(II);
+}
+
 
 MacroInfo::~MacroInfo() {
   //llvm::errs() << "Deleting MacroInfo ";

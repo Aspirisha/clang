@@ -119,9 +119,8 @@ class MacroInfo {
   bool CanBeCached : 1; // if expansion leads to ## with arguments of this macro,
   // hell no, it can't
 
-  llvm::SmallPtrSet<MacroInfo*, 8> DependsOnMIs;
   llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
-
+  llvm::SmallPtrSet<const IdentifierInfo*, 8> NonMacroInBodyIIs;
 
   // Only the Preprocessor gets to create and destroy these.
   MacroInfo(SourceLocation DefLoc);
@@ -264,6 +263,9 @@ public:
 
   // andy
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
+  bool allNonMacroIIsAreValid(const Preprocessor &PP) const;
+  void addNonMacroII(const IdentifierInfo *II);
+
   void addTokenToExpansionCache(const Token &Tok);
   /*void resetCache(const SmallVector<Token, 8> &Toks) {
     ExpCache = Toks;
@@ -303,12 +305,6 @@ public:
   { return ExpCache; }
 
   bool cachedExpansionEmpty() const { return ExpCache.empty(); }
-
-  depends_iterator this_depends_on_begin() const
-  { return DependsOnMIs.begin();}
-
-  depends_iterator this_depends_on_end() const
-  { return DependsOnMIs.end();}
 
   depends_iterator depending_on_this_begin() const
   { return DependingOnThisMIs.begin();}
