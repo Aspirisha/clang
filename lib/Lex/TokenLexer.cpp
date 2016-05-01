@@ -504,93 +504,69 @@ void TokenLexer::ExpandFunctionArguments() {
     DUMP_TOKEN_PTR(iter);
   llvm::errs() << "\n\n";*/
   if (ReadingFromExpansionCache) {
-    std::list<Token> tokens;
-    using list_iter = std::list<Token>::iterator;
-    using iter_pair = std::pair<list_iter, list_iter>;
+    std::vector<Token> tokens;
+    SmallVector<unsigned, 8> guardsStack;
+    SmallVector<bool, 8> hadArgSinceLastGuard;
 
-
-    auto Compare = [](const iter_pair &a, const iter_pair &b) {
-      return a.first->depth > b.first->depth;
-    };
-
-    std::priority_queue<iter_pair, std::vector<iter_pair>,
-            decltype(Compare)> expansionQueue(Compare);
-
-    SmallVector<list_iter, 8> guardsStack;
     for (unsigned i = 0, e = ResultToks.size(); i != e; ++i) {
       const Token &CurTok = ResultToks[i];
-      auto curIter = tokens.insert(tokens.end(), CurTok);
+      tokens.push_back(CurTok);
+
+      if (CurTok.isUnexpandableArg && !hadArgSinceLastGuard.empty()) {
+        hadArgSinceLastGuard.back() = true;
+      }
 
       if (CurTok.is(tok::cache_guard)) {
-        if (!guardsStack.empty() && guardsStack.back()->depth == CurTok.depth) {
-          expansionQueue.push({guardsStack.pop_back_val(), curIter});
+        if (!guardsStack.empty() && tokens[guardsStack.back()].depth == CurTok.depth) {
+          unsigned start = guardsStack.pop_back_val();
+         // llvm::errs() <<start << " " << finish << "\n";
+          bool hadArg = hadArgSinceLastGuard.pop_back_val();
+
+          if (!hadArgSinceLastGuard.empty() && !hadArgSinceLastGuard.back()) {
+            hadArgSinceLastGuard.back() = hadArg;
+          }
+          SmallVector<Token, 8> source;
+          source.append(std::next(tokens.begin(), start + 1), std::prev(tokens.end()));
+          tokens.erase(std::next(tokens.begin(), start + hadArg), tokens.end());
+
+
+          PP.EnterTokenStream(&*source.begin(), source.size(), false, false);
+          Token Tok;
+          PP.CurTokenLexer->lexingMode = GUARD_EXPANSION;
+          PP.Lex(Tok);
+          //llvm::errs() << "first got tok is ";
+          //DUMP_TOKEN_PTR(&Tok, "\n");
+          unsigned maxInnerDepth = 0;
+          while (Tok.isNot(tok::eof)) {
+            //llvm::errs() << "got token: ";
+            //DUMP_TOKEN_PTR(&Tok, "\n");
+            tokens.push_back(Tok);
+            if (Tok.is(tok::cache_guard)) {
+              maxInnerDepth = std::max(maxInnerDepth, Tok.depth + 1);
+            }
+            PP.Lex(Tok);
+          }
+
+          if (hadArg) {
+            tokens[start].depth = std::max(maxInnerDepth, tokens[start].depth);
+            tokens.push_back(tokens[start]);
+          }
+
         } else {
-          guardsStack.push_back(curIter);
+          guardsStack.push_back(tokens.size() - 1);
+          hadArgSinceLastGuard.push_back(false);
         }
-
-//        DUMP_TOKEN_PTR(&CurTok, " ");
-        continue;
       }
+
+    }
+    if (MadeChange) {
+      assert(!OwnsTokens && "This would leak if we already own the token list");
+      NumTokens = tokens.size();
+      Tokens = PP.cacheMacroExpandedTokens(this, tokens);
+      OwnsTokens = false; // what for?
+      return;
     }
 
-    while (!expansionQueue.empty()) {
-      //llvm::errs() << "while (!expansionQueue.empty())\n";
-      auto bounds = expansionQueue.top();
-      expansionQueue.pop();
-      bool hasArgInside = false;
-      /*llvm::errs() << "TOP:\n";
-      DUMP_TOKEN_PTR(bounds.first, "\n");*/
-      for (list_iter p = bounds.first; p != bounds.second && !hasArgInside; ++p) {
-        hasArgInside = p->isUnexpandableArg;
-      }
-
-      /*for (list_iter p = bounds.first; p != bounds.second; ++p) {
-        DUMP_TOKEN_PTR(p, "\n");
-      }*/
-
-      SmallVector<Token, 8> source;
-      source.append(std::next(bounds.first), bounds.second);
-      list_iter dest;
-      if (!hasArgInside) {
-        dest = tokens.erase(bounds.first, std::next(bounds.second));
-      } else {
-        //llvm::errs() << "hasArgInside!\n";
-        dest = tokens.erase(std::next(bounds.first), bounds.second);
-
-      }
-
-      PP.EnterTokenStream(&*source.begin(), source.size(), false, false);
-      Token Tok;
-      PP.CurTokenLexer->lexingMode = GUARD_EXPANSION;
-      PP.Lex(Tok);
-      //llvm::errs() << "first got tok is ";
-      //DUMP_TOKEN_PTR(&Tok, "\n");
-      unsigned maxInnerDepth = 0;
-      while (Tok.isNot(tok::eof)) {
-        //llvm::errs() << "got token: ";
-        //DUMP_TOKEN_PTR(&Tok, "\n");
-        tokens.insert(dest, Tok);
-        if (Tok.is(tok::cache_guard)) {
-          maxInnerDepth = std::max(maxInnerDepth, Tok.depth + 1);
-        }
-        PP.Lex(Tok);
-      }
-
-      if (hasArgInside) {
-        bounds.first->depth = bounds.second->depth = std::max(maxInnerDepth,
-                                                              bounds.first->depth);
-      }
-
-      assert(lexingMode != GUARD_EXPANSION);
-      /*llvm::errs() << "After processed cacheguard pair:\n";
-      for (auto iter = tokens.begin(); iter != tokens.end(); ++iter)
-        DUMP_TOKEN_PTR(iter);
-      llvm::errs() << "\n\n";*/
-    }
-
-    ResultToks.clear();
-    // perform charification and put result to ResultTokens
-    ResultToks.append(tokens.begin(), tokens.end());
   }
   /*llvm::errs() << "After all substitutions:\n";
   for (auto iter = ResultToks.begin(); iter != ResultToks.end(); ++iter)
