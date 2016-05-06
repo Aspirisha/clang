@@ -455,7 +455,12 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     InMacroArgs = false;
 
     // If there was an error parsing the arguments, bail out.
-    if (!Args) return true;
+    if (!Args) {
+      if (InBuildingMacroCache) {
+        ErrorsWhileCaching = true;
+      }
+      return true;
+    }
 
     ++NumFnMacroExpanded;
   } else {
@@ -944,6 +949,9 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       isVarargsElided = true;
     } else if (!ContainsCodeCompletionTok) {
       // Otherwise, emit the error.
+      if (InBuildingMacroCache) {
+        return nullptr;
+      }
       Diag(Tok, diag::err_too_few_args_in_macro_invoc);
       Diag(MI->getDefinitionLoc(), diag::note_macro_here)
         << MacroName.getIdentifierInfo();

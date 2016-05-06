@@ -183,6 +183,9 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// \brief True if we are pre-expanding macro arguments.
   bool InMacroArgPreExpansion;
 
+  bool InBuildingMacroCache;
+  bool ErrorsWhileCaching;
+
   /// \brief Mapping/lookup information for all identifiers in
   /// the program, including program keywords.
   mutable IdentifierTable Identifiers;
@@ -715,6 +718,10 @@ public:
   /// \brief True if we are currently preprocessing a #if or #elif directive
   bool isParsingIfOrElifDirective() const { 
     return ParsingIfOrElifDirective;
+  }
+
+  bool isBuildingMacroCache() const {
+    return InBuildingMacroCache;
   }
 
   /// \brief Control whether the preprocessor retains comments in output.

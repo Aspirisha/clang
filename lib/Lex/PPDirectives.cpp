@@ -2357,6 +2357,7 @@ void Preprocessor::HandleUndefDirective(Token &UndefTok) {
   auto *II = MacroNameTok.getIdentifierInfo();
   auto MD = getMacroDefinition(II);
 
+
   // If the callbacks want to know, tell them about the macro #undef.
   // Note: no matter if the macro was defined or not.
   if (Callbacks)
@@ -2366,6 +2367,7 @@ void Preprocessor::HandleUndefDirective(Token &UndefTok) {
   const MacroInfo *MI = MD.getMacroInfo();
   if (!MI)
     return;
+  MD.getMacroInfo()->setExpansionCacheValid(false);
 
   if (!MI->isUsed() && MI->isWarnIfUnused())
     Diag(MI->getDefinitionLoc(), diag::pp_macro_not_used);

@@ -37,7 +37,7 @@ void DUMP_TOKEN_PTR(T tok, const char * end=" ") {
 }
 
 namespace {
-  //std::list<Token> MACRO_STACK;
+ // std::list<Token> MACRO_STACK;
 
   inline int getArgNum(const Token &tok, const MacroInfo *holder) {
     IdentifierInfo *II = tok.getIdentifierInfo();
@@ -57,8 +57,8 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   // associated with it.
   destroy();
 
-  //if (MI)
-  //  MACRO_STACK.push_back(Tok);
+ // if (MI)
+ //   MACRO_STACK.push_back(Tok);
   Macro = MI;
   ActualArgs = Actuals;
   CurToken = 0;
@@ -74,7 +74,6 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   MacroExpansionStart = SourceLocation();
   ReadingFromExpansionCache = false;
   TokensFromCache.clear();
-  noArgumentExpansion = false; // TODO rename to expandedomething: if not, don't bother with cache
   lexingMode = NORMAL;
 
   //llvm::errs() << "Enter token: ";
@@ -158,7 +157,6 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   NextTokGetsSpace = false;
   MacroExpansionStart = SourceLocation();
   ReadingFromExpansionCache = false;
-  noArgumentExpansion = false;
   lexingMode = NORMAL;
   // Set HasLeadingSpace/AtStartOfLine so that the first token will be
   // returned unmodified.
@@ -231,7 +229,6 @@ bool TokenLexer::MaybeRemoveCommaBeforeVaArgs(
 /// return preexpanded tokens from Tokens.
 void TokenLexer::ExpandFunctionArguments() {
   SmallVector<Token, 128> ResultToks;
-
   // Loop through 'Tokens', expanding them into ResultToks.  Keep
   // track of whether we change anything.  If not, no need to keep them.  If so,
   // we install the newly expanded sequence as the new 'Tokens' list.
@@ -541,7 +538,9 @@ void TokenLexer::ExpandFunctionArguments() {
           //llvm::errs() << "first got tok is ";
           //DUMP_TOKEN_PTR(&Tok, "\n");
           unsigned maxInnerDepth = 0;
+          size_t generatedToks = 0;
           while (Tok.isNot(tok::eof)) {
+            generatedToks++;
             //llvm::errs() << "got token: ";
             //DUMP_TOKEN_PTR(&Tok, "\n");
             tokens.push_back(Tok);
@@ -549,6 +548,10 @@ void TokenLexer::ExpandFunctionArguments() {
               maxInnerDepth = std::max(maxInnerDepth, Tok.depth + 1);
             }
             PP.Lex(Tok);
+          }
+
+          if (generatedToks == 0 && !tokens.empty() && tokens.back().is(tok::hashhash)) {
+            tokens.pop_back();
           }
 
           if (hadArg) {
@@ -613,10 +616,6 @@ bool TokenLexer::Lex(Token &Tok) {
     // If this is a macro (not a token stream), mark the macro enabled now
     // that it is no longer being expanded.
 
-    /*noArgumentExpansion = !noArgumentExpansion;
-    if (!noArgumentExpansion) {
-      llvm::errs() << "second time EXIT!!!\n";
-    }*/
     if (Macro && !Macro->isEnabled()) {
         Macro->EnableMacro();
     }
@@ -628,8 +627,8 @@ bool TokenLexer::Lex(Token &Tok) {
         llvm::errs() << "CACHE_CREATION!\n";*/
 
       Tok.startToken();
-      /*if (Macro)
-        MACRO_STACK.pop_back();*/
+     // if (Macro)
+     //   MACRO_STACK.pop_back();
       PP.HandleEndOfTokenLexer(Tok);
       Tok.setKind(tok::eof);
       return true;
@@ -1119,9 +1118,10 @@ void TokenLexer::PropagateLineStartLeadingSpaceInfo(Token &Result) {
 }
 
 void TokenLexer::makeCachedExpansion() {
-  //llvm::errs() << "makeCachedExpansion() for ";
- // assert(MACRO_STACK.size());
-  //DUMP_TOKEN_PTR(MACRO_STACK.rbegin(), "\n");
+  PP.InBuildingMacroCache = true;
+ /* llvm::errs() << "makeCachedExpansion() for ";
+  assert(MACRO_STACK.size());
+  DUMP_TOKEN_PTR(MACRO_STACK.rbegin(), "\n");*/
 
   SmallVector<Token, 8> tokens;
   tokens.reserve(Macro->getNumTokens());
@@ -1162,6 +1162,13 @@ void TokenLexer::makeCachedExpansion() {
     PP.Lex(Tok);
     Tok.isUnexpandableArg = false;
   } while (Result.back().isNot(tok::eof));
+  if (PP.ErrorsWhileCaching) {
+    PP.ErrorsWhileCaching = false;
+    //llvm::errs() << "can't be cached :(\n";
+    Macro->setCanBeCached(false);
+    PP.InBuildingMacroCache = false;
+    return;
+  }
   Result.pop_back();
   assert(lexingMode != GUARD_EXPANSION && "Sanity check failed!");
 
@@ -1175,4 +1182,5 @@ void TokenLexer::makeCachedExpansion() {
   Macro->resetCache(std::move(Result));
   Macro->setExpansionCacheValid(true);
   //llvm::errs() << "END of makeCachedExpansion()\n";
+  PP.InBuildingMacroCache = false;
 }

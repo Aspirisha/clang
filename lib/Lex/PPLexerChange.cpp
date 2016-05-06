@@ -171,7 +171,9 @@ void Preprocessor::EnterMacro(Token &Tok, SourceLocation ILEnd,
 
   PushIncludeMacroStack();
   CurDirLookup = nullptr;
+  //auto mode = CurTokenLexer ? CurTokenLexer->lexingMode : TokenLexer::NORMAL;
   CurTokenLexer = std::move(TokLexer);
+  //CurTokenLexer->lexingMode = mode;
   if (CurLexerKind != CLK_LexAfterModuleImport)
     CurLexerKind = CLK_TokenLexer;
 }
@@ -223,7 +225,9 @@ void Preprocessor::EnterTokenStream(const Token *Toks, unsigned NumToks,
   // Save our current state.
   PushIncludeMacroStack();
   CurDirLookup = nullptr;
+  //auto mode = CurTokenLexer ? CurTokenLexer->lexingMode : TokenLexer::NORMAL;
   CurTokenLexer = std::move(TokLexer);
+  //CurTokenLexer->lexingMode = mode;
   if (CurLexerKind != CLK_LexAfterModuleImport)
     CurLexerKind = CLK_TokenLexer;
 }

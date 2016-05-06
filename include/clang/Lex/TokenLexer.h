@@ -106,7 +106,6 @@ class TokenLexer {
 
   // andy
   bool ReadingFromExpansionCache : 1;
-  bool noArgumentExpansion : 1;
   
   std::list<Token> TokensFromCache;
 
