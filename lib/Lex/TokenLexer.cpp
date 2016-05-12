@@ -593,11 +593,8 @@ void TokenLexer::ExpandFunctionArguments() {
         PP.CurTokenLexer->lexingMode = GUARD_EXPANSION;
         PP.Lex(Tok);
         unsigned maxInnerDepth = 0;
-        size_t generatedToks = 0;
+        const size_t size_before = tokens.size();
         while (Tok.isNot(tok::eof)) {
-          generatedToks++;
-          //llvm::errs() << "got token: ";
-          //DUMP_TOKEN_PTR(&Tok, "\n");
           tokens.push_back(Tok);
           if (Tok.is(tok::cache_guard)) {
             maxInnerDepth = std::max(maxInnerDepth, Tok.depth + 1);
@@ -606,7 +603,7 @@ void TokenLexer::ExpandFunctionArguments() {
         }
 
         // remove ## if following arg expanded into nothing
-        if (generatedToks == 0 && !tokens.empty() && tokens.back().is(tok::hashhash)) {
+        if (size_before == tokens.size() && !tokens.empty() && tokens.back().is(tok::hashhash)) {
           tokens.pop_back();
           start--;
         }
