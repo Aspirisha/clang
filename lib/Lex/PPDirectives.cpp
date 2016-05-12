@@ -2143,7 +2143,7 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
     // Object-like macros are very simple, just read their body.
     while (Tok.isNot(tok::eod)) {
       LastTok = Tok;
-      MI->AddTokenToBody(Tok); // TODO Maybe add token to unexpanded cache here?
+      MI->AddTokenToBody(Tok);
       // Get the next token of the macro.
       LexUnexpandedToken(Tok);
     }
