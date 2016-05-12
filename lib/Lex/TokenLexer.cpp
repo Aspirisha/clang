@@ -19,7 +19,7 @@
 #include "clang/Lex/Preprocessor.h"
 using namespace clang;
 
-#define DEBUG_PRINTS
+//#define DEBUG_PRINTS
 
 #define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
                           X.dump(SM);\
@@ -243,7 +243,6 @@ void TokenLexer::ExpandFunctionArguments() {
   // track of whether we change anything.  If not, no need to keep them.  If so,
   // we install the newly expanded sequence as the new 'Tokens' list.
   bool MadeChange = false;
-  bool hasGuards = false;
 
   SmallVector<unsigned, 8> outerGuardsOffset;
   SmallVector<unsigned, 8> nonArgumentGuards;
@@ -419,10 +418,8 @@ void TokenLexer::ExpandFunctionArguments() {
         // If the '##' came from expanding an argument, turn it into 'unknown'
         // to avoid pasting.
 
-        llvm::errs() << "arg:\n";
         for (unsigned i = FirstResult, e = ResultToks.size(); i != e; ++i) {
           Token &Tok = ResultToks[i];
-          DUMP_TOKEN_PTR(&Tok, "\n");
           if (Tok.is(tok::hashhash) &&
                   !ResultToks[i-1].isUnexpandableArg && !ResultToks[i+1].isUnexpandableArg
               && ResultToks[i-1].isNot(tok::cache_guard) && ResultToks[i+1].isNot(tok::cache_guard)) {
@@ -476,8 +473,9 @@ void TokenLexer::ExpandFunctionArguments() {
         Token &Tok = ResultToks[i];
         if (Tok.is(tok::hashhash)) {
           if (i+1 == e || i == 0 || (!ResultToks[i-1].isUnexpandableArg
-            && !ResultToks[i+1].isUnexpandableArg) && ResultToks[i-1].isNot(tok::cache_guard)
-                                                      && ResultToks[i+1].isNot(tok::cache_guard)) // TODO keep this as hashhash if it should concat actual args later
+            && !ResultToks[i+1].isUnexpandableArg && ResultToks[i-1].isNot(tok::cache_guard)
+                                                      && ResultToks[i+1].isNot(tok::cache_guard)))
+            // keep this as hashhash if it should concat actual args later
           Tok.setKind(tok::unknown); // but now it has one of the arguments unexpandable
         }
 
@@ -540,128 +538,121 @@ void TokenLexer::ExpandFunctionArguments() {
     continue;
   }
 
+  // If anything changed, install this as the new Tokens list.
+  if (!ReadingFromExpansionCache) {
+    if (MadeChange) {
+      assert(!OwnsTokens && "This would leak if we already own the token list");
+      // This is deleted in the dtor.
+      NumTokens = ResultToks.size();
+
+      // The tokens will be added to Preprocessor's cache and will be removed
+      // when this TokenLexer finishes lexing them.
+      Tokens = PP.cacheMacroExpandedTokens(this, ResultToks);
+
+      // The preprocessor cache of macro expanded tokens owns these tokens,not us.
+      OwnsTokens = false; // what for?
+    }
+    return;
+  }
+
+
 #ifdef DEBUG_PRINTS
   llvm::errs() << "After macro substitution: \n";
   for (auto iter = ResultToks.begin(); iter != ResultToks.end(); ++iter)
     DUMP_TOKEN_PTR(iter);
   llvm::errs() << "\n\n";
 #endif
-  if (ReadingFromExpansionCache) {
-    SmallVector<Token, 128> tokens;
-    SmallVector<unsigned, 8> guardsStack;
-    SmallVector<bool, 8> hadArgSinceLastGuard;
+  SmallVector<Token, 128> tokens;
+  SmallVector<unsigned, 8> guardsStack;
+  SmallVector<bool, 8> hadArgSinceLastGuard;
 
-    for (unsigned i = 0, e = ResultToks.size(); i != e; ++i) {
-      const Token &CurTok = ResultToks[i];
-      tokens.push_back(CurTok);
+  for (unsigned i = 0, e = ResultToks.size(); i != e; ++i) {
+    const Token &CurTok = ResultToks[i];
+    tokens.push_back(CurTok);
 
-      if (CurTok.isUnexpandableArg && !hadArgSinceLastGuard.empty()) {
-        hadArgSinceLastGuard.back() = true;
-      }
+    if (CurTok.isUnexpandableArg && !hadArgSinceLastGuard.empty()) {
+      hadArgSinceLastGuard.back() = true;
+    }
 
-      if (CurTok.is(tok::cache_guard)) {
-        if (!guardsStack.empty() && tokens[guardsStack.back()].depth == CurTok.depth) {
-          unsigned start = guardsStack.pop_back_val();
+    if (CurTok.is(tok::cache_guard)) {
+      if (!guardsStack.empty() && tokens[guardsStack.back()].depth == CurTok.depth) {
+        unsigned start = guardsStack.pop_back_val();
 
-          bool hadArg = hadArgSinceLastGuard.pop_back_val();
+        bool hadArg = hadArgSinceLastGuard.pop_back_val();
 
-          if (!hadArgSinceLastGuard.empty() && !hadArgSinceLastGuard.back()) {
-            hadArgSinceLastGuard.back() = hadArg;
-          }
-          SmallVector<Token, 8> source;
-          source.append(std::next(tokens.begin(), start + 1), std::prev(tokens.end()));
-          tokens.erase(std::next(tokens.begin(), start + hadArg), tokens.end());
-
-
-          PP.EnterTokenStream(&*source.begin(), source.size(), false, false);
-          Token Tok;
-          PP.CurTokenLexer->lexingMode = GUARD_EXPANSION;
-          PP.Lex(Tok);
-          unsigned maxInnerDepth = 0;
-          size_t generatedToks = 0;
-          while (Tok.isNot(tok::eof)) {
-            generatedToks++;
-            //llvm::errs() << "got token: ";
-            //DUMP_TOKEN_PTR(&Tok, "\n");
-            tokens.push_back(Tok);
-            if (Tok.is(tok::cache_guard)) {
-              maxInnerDepth = std::max(maxInnerDepth, Tok.depth + 1);
-            }
-            PP.Lex(Tok);
-          }
-
-          // remove ## if following arg expanded into nothing
-          if (generatedToks == 0 && !tokens.empty() && tokens.back().is(tok::hashhash)) {
-            tokens.pop_back();
-            start--;
-          }
-
-          if (hadArg) {
-            tokens[start].depth = std::max(maxInnerDepth, tokens[start].depth);
-            tokens.push_back(tokens[start]);
-          } else if (start > 0 && tokens[start-1].is(tok::hash)) {
-            SourceLocation ExpansionLocStart = tokens[start-1].getLocation();
-            SourceLocation ExpansionLocEnd = tokens.back().isNot(tok::hash) ?
-                                             tokens.back().getLocation() : ExpansionLocStart;
-
-            Token eof;
-            eof.startToken();
-            eof.setKind(tok::eof);
-            tokens.push_back(eof);
-
-            const Token *arg = &*tokens.begin() + start;
-            Token Res = MacroArgs::StringifyArgument(arg,
-                                                 PP, false,
-                                                 ExpansionLocStart,
-                                                 ExpansionLocEnd);
-            Res.setFlag(Token::StringifiedInMacro);
-            tokens.erase(std::next(tokens.begin(), start - 1), tokens.end());
-            tokens.push_back(Res);
-          }
-#ifdef DEBUG_PRINTS
-          llvm::errs() << "After removing pair of guards: \n";
-          for (auto iter = tokens.begin(); iter != tokens.end(); ++iter)
-            DUMP_TOKEN_PTR(iter);
-          llvm::errs() << "\n\n";
-#endif
-        } else {
-          guardsStack.push_back(tokens.size() - 1);
-          hadArgSinceLastGuard.push_back(false);
+        if (!hadArgSinceLastGuard.empty() && !hadArgSinceLastGuard.back()) {
+          hadArgSinceLastGuard.back() = hadArg;
         }
+        SmallVector<Token, 8> source;
+        source.append(std::next(tokens.begin(), start + 1), std::prev(tokens.end()));
+        tokens.erase(std::next(tokens.begin(), start + hadArg), tokens.end());
+
+
+        PP.EnterTokenStream(&*source.begin(), source.size(), false, false);
+        Token Tok;
+        PP.CurTokenLexer->lexingMode = GUARD_EXPANSION;
+        PP.Lex(Tok);
+        unsigned maxInnerDepth = 0;
+        size_t generatedToks = 0;
+        while (Tok.isNot(tok::eof)) {
+          generatedToks++;
+          //llvm::errs() << "got token: ";
+          //DUMP_TOKEN_PTR(&Tok, "\n");
+          tokens.push_back(Tok);
+          if (Tok.is(tok::cache_guard)) {
+            maxInnerDepth = std::max(maxInnerDepth, Tok.depth + 1);
+          }
+          PP.Lex(Tok);
+        }
+
+        // remove ## if following arg expanded into nothing
+        if (generatedToks == 0 && !tokens.empty() && tokens.back().is(tok::hashhash)) {
+          tokens.pop_back();
+          start--;
+        }
+
+        if (hadArg) {
+          tokens[start].depth = std::max(maxInnerDepth, tokens[start].depth);
+          tokens.push_back(tokens[start]);
+        } else if (start > 0 && tokens[start-1].is(tok::hash)) {
+          SourceLocation ExpansionLocStart = tokens[start-1].getLocation();
+          SourceLocation ExpansionLocEnd = tokens.back().isNot(tok::hash) ?
+                                           tokens.back().getLocation() : ExpansionLocStart;
+
+          Token eof;
+          eof.startToken();
+          eof.setKind(tok::eof);
+          tokens.push_back(eof);
+
+          const Token *arg = &*tokens.begin() + start;
+          Token Res = MacroArgs::StringifyArgument(arg,
+                                               PP, false,
+                                               ExpansionLocStart,
+                                               ExpansionLocEnd);
+          Res.setFlag(Token::StringifiedInMacro);
+          tokens.erase(std::next(tokens.begin(), start - 1), tokens.end());
+          tokens.push_back(Res);
+        }
+#ifdef DEBUG_PRINTS
+        llvm::errs() << "After removing pair of guards: \n";
+        for (auto iter = tokens.begin(); iter != tokens.end(); ++iter)
+          DUMP_TOKEN_PTR(iter);
+        llvm::errs() << "\n\n";
+#endif
+      } else {
+        guardsStack.push_back(tokens.size() - 1);
+        hadArgSinceLastGuard.push_back(false);
       }
     }
-    if (MadeChange) {
-      assert(!OwnsTokens && "This would leak if we already own the token list");
-      NumTokens = tokens.size();
-      Tokens = PP.cacheMacroExpandedTokens(this, tokens);
-      OwnsTokens = false; // what for?
-      return;
-    }
-
   }
+
+  NumTokens = tokens.size();
+  Tokens = PP.cacheMacroExpandedTokens(this, tokens);
+  OwnsTokens = false; // what for?
   /*llvm::errs() << "After all substitutions:\n";
   for (auto iter = ResultToks.begin(); iter != ResultToks.end(); ++iter)
     DUMP_TOKEN_PTR(iter);
   llvm::errs() << "\n\n";*/
-
-
-  // If anything changed, install this as the new Tokens list.
-  if (MadeChange) {
-    assert(!OwnsTokens && "This would leak if we already own the token list");
-    // This is deleted in the dtor.
-    NumTokens = ResultToks.size();
-
-    /*for (size_t i = 0; i < NumTokens; i++) {
-      if (ResultToks[i].is(tok::cache_guard))
-        ResultToks[i].depth++;
-    }*/
-    // The tokens will be added to Preprocessor's cache and will be removed
-    // when this TokenLexer finishes lexing them.
-    Tokens = PP.cacheMacroExpandedTokens(this, ResultToks);
-
-    // The preprocessor cache of macro expanded tokens owns these tokens,not us.
-    OwnsTokens = false; // what for?
-  }
 }
 
 /// \brief Checks if two tokens form wide string literal.
@@ -1204,7 +1195,6 @@ void TokenLexer::makeCachedExpansion() {
   SmallVector<Token, 8> tokens;
   tokens.reserve(Macro->getNumTokens());
 
-  bool doNotExpandNextArg = false;
   size_t bufSize = Macro->tokens().size();
   for (size_t i = 0; i < bufSize; i++) {
     if ((i == 0 || !tokenForbidsEpansion(tokens.back())) &&
