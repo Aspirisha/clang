@@ -32,7 +32,8 @@ MacroInfo::MacroInfo(SourceLocation DefLoc)
     FromASTFile(false),
     CanBeCached(true),
     UsedForHeaderGuard(false),
-    IsExpansionCached(false)
+    IsExpansionCached(false),
+    expanded(0)
 {
 }
 

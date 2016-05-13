@@ -116,8 +116,8 @@ class MacroInfo {
   // for function-like macros
   bool IsExpansionCached : 1;
   SmallVector<Token, 8> ExpCache;
-  bool CanBeCached : 1; // if expansion leads to ## with arguments of this macro,
-  // hell no, it can't
+  bool CanBeCached : 1; // if caching leads to errors, hell no, it can't
+  size_t expanded;
 
   llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
   llvm::SmallPtrSet<const IdentifierInfo*, 8> NonMacroInBodyIIs;
@@ -127,6 +127,7 @@ class MacroInfo {
   ~MacroInfo();
 
 public:
+
   /// \brief Return the location that the macro was defined at.
   SourceLocation getDefinitionLoc() const { return Location; }
 
@@ -262,6 +263,14 @@ public:
 
 
   // andy
+  size_t expandedTimes() const {
+    return expanded;
+  }
+
+  size_t incExpandedTimes() {
+    return ++expanded;
+  }
+
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
   bool allNonMacroIIsAreValid(const Preprocessor &PP) const;
   void addNonMacroII(const IdentifierInfo *II);
