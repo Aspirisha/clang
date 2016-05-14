@@ -19,7 +19,7 @@
 #include "clang/Lex/Preprocessor.h"
 using namespace clang;
 
-#define DEBUG_PRINTS
+//#define DEBUG_PRINTS
 
 #define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
                           X.dump(SM);\
@@ -311,6 +311,7 @@ void TokenLexer::ExpandFunctionArguments() {
         assert(PP.InBuildingMacroCache);
         if (PP.InBuildingMacroCache)
           PP.ErrorsWhileCaching = true;
+        //llvm::errs() << "can't stringify!\n";
         continue;
       }
 
@@ -879,6 +880,7 @@ bool TokenLexer::Lex(Token &Tok) {
         else if (Tok.isAnyIdentifier())
           Macro->addNonMacroII(II);
       }
+
       return PP.HandleIdentifier(Tok);
     }
   }
@@ -1277,7 +1279,11 @@ void TokenLexer::makeCachedExpansion() {
 
   SmallVector<Token, 8> Result;
   PP.EnterTokenStream(&*tokens.begin(), tokens.size(), false, false);
+  bool oldPPDisableExpansion = PP.DisableMacroExpansion;
+
+  PP.DisableMacroExpansion = false;
   PP.CurTokenLexer->lexingMode = CACHE_CREATION;
+
   do {
     Result.push_back(Token());
     Token &Tok = Result.back();
@@ -1289,22 +1295,24 @@ void TokenLexer::makeCachedExpansion() {
     //llvm::errs() << "can't be cached :(\n";
     Macro->setCanBeCached(false);
     PP.InBuildingMacroCache = false;
+    PP.DisableMacroExpansion = oldPPDisableExpansion;
     return;
   }
   Result.pop_back();
   assert(lexingMode != GUARD_EXPANSION && "Sanity check failed!");
 
+  Macro->resetCache(std::move(Result));
 #ifdef DEBUG_PRINTS
   llvm::errs() << "Result for ";
   DUMP_TOKEN_PTR(MACRO_STACK.rbegin(), ":\n");
 
-  for (auto tok = Result.begin(); tok != Result.end(); ++tok){
+  for (auto tok = Macro->getExpansionCache().begin(); tok != Macro->getExpansionCache().end(); ++tok){
     DUMP_TOKEN_PTR(tok);
   }
   llvm::errs() << "\n\n";
 #endif
 
-  Macro->resetCache(std::move(Result));
+  PP.DisableMacroExpansion = oldPPDisableExpansion;
   Macro->setExpansionCacheValid(true);
   //llvm::errs() << "END of makeCachedExpansion()\n";
   PP.InBuildingMacroCache = false;

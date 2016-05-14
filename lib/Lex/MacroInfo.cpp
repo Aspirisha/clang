@@ -263,6 +263,7 @@ void MacroInfo::setExpansionCacheValid(bool valid)
   if (!valid) {
     ExpCache.clear();
     NonMacroInBodyIIs.clear();
+    //llvm::errs() << "redefine\n";
     for (auto dep : DependingOnThisMIs)
       dep->setExpansionCacheValid(false);
   }
