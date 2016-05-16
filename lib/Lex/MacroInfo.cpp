@@ -287,8 +287,3 @@ bool MacroInfo::allNonMacroIIsAreValid(const Preprocessor &PP) const {
 void MacroInfo::addNonMacroII(const IdentifierInfo *II) {
   NonMacroInBodyIIs.insert(II);
 }
-
-
-MacroInfo::~MacroInfo() {
-  //llvm::errs() << "Deleting MacroInfo ";
-}
