@@ -724,6 +724,10 @@ public:
     return InBuildingMacroCache;
   }
 
+  void setErrorsWhileCaching() {
+    ErrorsWhileCaching = true;
+  }
+
   /// \brief Control whether the preprocessor retains comments in output.
   void SetCommentRetentionState(bool KeepComments, bool KeepMacroComments) {
     this->KeepComments = KeepComments | KeepMacroComments;

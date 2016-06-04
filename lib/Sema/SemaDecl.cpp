@@ -2022,7 +2022,7 @@ void Sema::MergeTypedefNameDecl(Scope *S, TypedefNameDecl *New,
     // since that was the intent of DR56.
     if (!isa<TypedefNameDecl>(Old))
       return;
-
+    llvm::errs() << "redefinition!\n";
     Diag(New->getLocation(), diag::err_redefinition)
       << New->getDeclName();
     Diag(Old->getLocation(), diag::note_previous_definition);

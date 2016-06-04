@@ -9,6 +9,7 @@
 //  This file implements semantic analysis for C++ templates.
 //===----------------------------------------------------------------------===/
 
+#include <clang/Lex/Preprocessor.h>
 #include "TreeTransform.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
@@ -1034,7 +1035,7 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
           makeMergedDefinitionVisible(Tmpl, KWLoc);
           return Def;
         }
-
+        llvm::errs() << "SHIT5!\n";
         Diag(NameLoc, diag::err_redefinition) << Name;
         Diag(Def->getLocation(), diag::note_previous_definition);
         // FIXME: Would it make sense to try to "forget" the previous
@@ -6473,11 +6474,12 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
       TUK = TUK_Declaration;
     } else if (Def) {
       SourceRange Range(TemplateNameLoc, RAngleLoc);
-      Diag(TemplateNameLoc, diag::err_redefinition)
-        << Context.getTypeDeclType(Specialization) << Range;
+      llvm::errs() << hasVisibleDefinition(Def, &Hidden) << " " << (SkipBody == 0)  << " SHIT4!\n";
+     // Diag(TemplateNameLoc, diag::err_redefinition)
+     //   << Context.getTypeDeclType(Specialization) << Range;
       Diag(Def->getLocation(), diag::note_previous_definition);
-      Specialization->setInvalidDecl();
-      return true;
+      //Specialization->setInvalidDecl();
+      return false;
     }
   }
 

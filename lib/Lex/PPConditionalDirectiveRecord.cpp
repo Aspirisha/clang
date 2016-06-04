@@ -31,7 +31,6 @@ bool PPConditionalDirectiveRecord::rangeIntersectsConditionalDirective(
                            Range.getBegin(), CondDirectiveLoc::Comp(SourceMgr));
   if (low == CondDirectiveLocs.end())
     return false;
-
   if (SourceMgr.isBeforeInTranslationUnit(Range.getEnd(), low->getLoc()))
     return false;
 

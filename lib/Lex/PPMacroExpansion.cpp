@@ -764,9 +764,11 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       //                 Tok.getIdentifierInfo()->getName() : Tok.getName()) << " ";
       if (Tok.isOneOf(tok::eof, tok::eod)) { // "#if f(<eof>" & "#if f(\n"
         if (!ContainsCodeCompletionTok) {
-          Diag(MacroName, diag::err_unterm_macro_invoc);
-          Diag(MI->getDefinitionLoc(), diag::note_macro_here)
-            << MacroName.getIdentifierInfo();
+          if (!InBuildingMacroCache) {
+            Diag(MacroName, diag::err_unterm_macro_invoc);
+            Diag(MI->getDefinitionLoc(), diag::note_macro_here)
+              << MacroName.getIdentifierInfo();
+          }
           // Do not lose the EOF/EOD.  Return it to the client.
           MacroName = Tok;
           return nullptr;
@@ -867,13 +869,12 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       !ContainsCodeCompletionTok) {
     // Emit the diagnostic at the macro name in case there is a missing ).
     // Emitting it at the , could be far away from the macro name.
-    if (InBuildingMacroCache) {
-      return nullptr;
+    if (!InBuildingMacroCache) {
+          
+      Diag(TooManyArgsLoc, diag::err_too_many_args_in_macro_invoc);
+      Diag(MI->getDefinitionLoc(), diag::note_macro_here)
+        << MacroName.getIdentifierInfo();
     }
-    Diag(TooManyArgsLoc, diag::err_too_many_args_in_macro_invoc);
-    Diag(MI->getDefinitionLoc(), diag::note_macro_here)
-      << MacroName.getIdentifierInfo();
-
     // Commas from braced initializer lists will be treated as argument
     // separators inside macros.  Attempt to correct for this with parentheses.
     // TODO: See if this can be generalized to angle brackets for templates
@@ -1654,8 +1655,15 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     }
 
     int Value = 0;
-    if (!IsValid)
+    if (!IsValid) {
+
+      if (InBuildingMacroCache) {
+        ErrorsWhileCaching = true;
+        return;
+      }
+
       Diag(StartLoc, diag::err_feature_check_malformed);
+    }
     else if (II == Ident__is_identifier)
       Value = FeatureII->getTokenID() == tok::identifier;
     else if (II == Ident__has_builtin) {
