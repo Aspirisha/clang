@@ -6475,10 +6475,10 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
     } else if (Def) {
       SourceRange Range(TemplateNameLoc, RAngleLoc);
       llvm::errs() << hasVisibleDefinition(Def, &Hidden) << " " << (SkipBody == 0)  << " SHIT4!\n";
-     // Diag(TemplateNameLoc, diag::err_redefinition)
-     //   << Context.getTypeDeclType(Specialization) << Range;
+      Diag(TemplateNameLoc, diag::err_redefinition)
+        << Context.getTypeDeclType(Specialization) << Range;
       Diag(Def->getLocation(), diag::note_previous_definition);
-      //Specialization->setInvalidDecl();
+      Specialization->setInvalidDecl();
       return false;
     }
   }

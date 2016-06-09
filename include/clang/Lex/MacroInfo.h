@@ -29,6 +29,12 @@ class Module;
 class ModuleMacro;
 class Preprocessor;
 
+  enum SLocsRelation {
+    SLOCS,
+    NO_SLOCS,
+    NO_INFO
+  };
+
 /// \brief Encapsulates the data about a macro definition (e.g. its tokens).
 ///
 /// There's an instance of this class for every #define.
@@ -117,6 +123,7 @@ class MacroInfo {
   bool IsExpansionCached : 1;
   SmallVector<Token, 8> ExpCache;
   bool CanBeCached : 1; // if caching leads to errors, hell no, it can't
+  SLocsRelation needsSLocs;
   size_t expanded;
 
   llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
@@ -297,6 +304,14 @@ public:
 
   void setCanBeCached(bool canBeCached) {
     CanBeCached = canBeCached;
+  }
+
+  void setSLocsRelation(SLocsRelation slocRel) {
+    needsSLocs = slocRel;
+  }
+
+  SLocsRelation needSlocs() const {
+    return needsSLocs;
   }
 
   bool isExpansionCacheValid() const {

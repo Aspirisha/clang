@@ -33,6 +33,7 @@ MacroInfo::MacroInfo(SourceLocation DefLoc)
     CanBeCached(true),
     UsedForHeaderGuard(false),
     IsExpansionCached(false),
+    needsSLocs(NO_INFO),
     expanded(0)
 {
 }

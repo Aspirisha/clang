@@ -1502,10 +1502,21 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
   Tok.clearFlag(Token::NeedsCleaning);
 
   if (II == Ident__LINE__) {
+    /*for (MacroInfo* m : MacroStack) {
+      if (m->needSlocs() == NO_INFO) {
+        m->setSLocsRelation(SLOCS);
+      }
+    }*/
+
+    //MacroStack.clear();
+    if (isBuildingMacroCache()) {
+      setErrorsWhileCaching();
+      //setNeedsSLocs();
+    }
     // C99 6.10.8: "__LINE__: The presumed line number (within the current
     // source file) of the current source line (an integer constant)".  This can
     // be affected by #line.
-    SourceLocation Loc = Tok.getLocation();
+    SourceLocation Loc = (root) ? root->getLocation() : Tok.getLocation();
 
     // Advance to the location of the first _, this might not be the first byte
     // of the token if it starts with an escaped newline.

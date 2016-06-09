@@ -185,6 +185,8 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
 
   bool InBuildingMacroCache;
   bool ErrorsWhileCaching;
+  bool NeedSourceLocs;
+
 
   /// \brief Mapping/lookup information for all identifiers in
   /// the program, including program keywords.
@@ -308,6 +310,8 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   ///
   /// One of CurLexer and CurTokenLexer must be null.
   std::unique_ptr<TokenLexer> CurTokenLexer;
+
+  std::vector<MacroInfo*> MacroStack;
 
   /// \brief The kind of lexer we're currently working with.
   enum CurLexerKind {
@@ -653,8 +657,10 @@ public:
                IdentifierInfoLookup *IILookup = nullptr,
                bool OwnsHeaderSearch = false,
                TranslationUnitKind TUKind = TU_Complete);
-
+  unsigned withSourceLocs;
   ~Preprocessor();
+
+  Token *root;
 
   /// \brief Initialize the preprocessor using information about the target.
   ///
@@ -726,6 +732,23 @@ public:
 
   void setErrorsWhileCaching() {
     ErrorsWhileCaching = true;
+  }
+
+  void setNeedsSLocs(bool needs = true) {
+    NeedSourceLocs = needs;
+  }
+
+  bool needsSLocs() const {
+    return NeedSourceLocs;
+  }
+
+  void pushMacro(MacroInfo *m) {
+    MacroStack.push_back(m);
+  }
+
+  void popMacro() {
+    assert(MacroStack.size());
+    MacroStack.pop_back();
   }
 
   /// \brief Control whether the preprocessor retains comments in output.
@@ -1514,7 +1537,6 @@ private:
   llvm::DenseMap<IdentifierInfo*,unsigned> PoisonReasons;
 
 public:
-
   /// \brief Specifies the reason for poisoning an identifier.
   ///
   /// If that identifier is accessed while poisoned, then this reason will be

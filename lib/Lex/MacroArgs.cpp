@@ -237,6 +237,7 @@ Token MacroArgs::StringifyArgument(const Token *ArgToks,
       bool Invalid = false;
       unsigned ActualTokLen = PP.getSpelling(Tok, BufPtr, &Invalid);
 
+
       if (!Invalid) {
         // If getSpelling returned a pointer to an already uniqued version of
         // the string instead of filling in BufPtr, memcpy it onto our string.

@@ -60,7 +60,7 @@ bool TokenConcatenation::IsIdentifierStringPrefix(const Token &Tok) const {
   if (Tok.getLength() < 256) {
     char Buffer[256];
     const char *TokPtr = Buffer;
-    unsigned length = PP.getSpelling(Tok, TokPtr);
+    unsigned length = PP.getSpelling(Tok, TokPtr); // TODO punctuators
     return IsStringPrefix(StringRef(TokPtr, length), LangOpts.CPlusPlus11);
   }
 
@@ -136,7 +136,7 @@ static char GetFirstChar(Preprocessor &PP, const Token &Tok) {
   } else if (Tok.getLength() < 256) {
     char Buffer[256];
     const char *TokPtr = Buffer;
-    PP.getSpelling(Tok, TokPtr);
+    PP.getSpelling(Tok, TokPtr); // TODO fix for punctuators
     return TokPtr[0];
   } else {
     return PP.getSpelling(Tok)[0];
