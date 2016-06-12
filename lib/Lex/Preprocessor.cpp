@@ -77,7 +77,6 @@ Preprocessor::Preprocessor(IntrusiveRefCntPtr<PreprocessorOptions> PPOpts,
       CurSubmoduleState(&NullSubmoduleState), MacroArgCache(nullptr),
       Record(nullptr), MIChainHead(nullptr), DeserialMIChainHead(nullptr) {
   OwnsHeaderSearch = OwnsHeaders;
-  withSourceLocs = 0;
 
   CounterValue = 0; // __COUNTER__ starts at 0.
   root = 0;
@@ -101,8 +100,6 @@ Preprocessor::Preprocessor(IntrusiveRefCntPtr<PreprocessorOptions> PPOpts,
   MacroExpansionInDirectivesOverride = false;
   InMacroArgs = false;
   InMacroArgPreExpansion = false;
-  InBuildingMacroCache = false;
-  ErrorsWhileCaching = false;
   NumCachedTokenLexers = 0;
   PragmasEnabled = true;
   ParsingIfOrElifDirective = false;

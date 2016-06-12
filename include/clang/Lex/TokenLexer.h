@@ -27,11 +27,6 @@ namespace clang {
 /// macro expansion and _Pragma handling, for example.
 ///
 class TokenLexer {
-  enum LexingMode {
-    CACHE_CREATION,
-    GUARD_EXPANSION,
-    NORMAL
-  };
   /// Macro - The macro we are expanding from.  This is null if expanding a
   /// token stream.
   ///
@@ -103,16 +98,12 @@ class TokenLexer {
   /// DisableMacroExpansion - This is true when tokens lexed from the TokenLexer
   /// should not be subject to further macro expansion.
   bool DisableMacroExpansion : 1;
-
-  // andy
-  bool ReadingFromExpansionCache : 1;
   
   std::list<Token> TokensFromCache;
 
   TokenLexer(const TokenLexer &) = delete;
   void operator=(const TokenLexer &) = delete;
 public:
-  LexingMode lexingMode;
   /// Create a TokenLexer for the specified macro with the specified actual
   /// arguments.  Note that this ctor takes ownership of the ActualArgs pointer.
   /// ILEnd specifies the location of the ')' for a function-like macro or the
@@ -177,16 +168,9 @@ private:
   /// token.
   bool PasteTokens(Token &Tok);
 
-  bool PasteTokensToCache(std::list<Token>::iterator lhs,
-                          std::list<Token>::iterator rhs,
-                          Token &res);
-
   /// Expand the arguments of a function-like macro so that we can quickly
   /// return preexpanded tokens from Tokens.
   void ExpandFunctionArguments();
-
-  // andy
-  void ExpandFunctionArgumentsFromCache();
 
   /// HandleMicrosoftCommentPaste - In microsoft compatibility mode, /##/ pastes
   /// together to form a comment that comments out everything in the current
@@ -216,7 +200,6 @@ private:
                                     Preprocessor &PP);
 
   void PropagateLineStartLeadingSpaceInfo(Token &Result);
-  void makeCachedExpansion();
 };
 
 }  // end namespace clang

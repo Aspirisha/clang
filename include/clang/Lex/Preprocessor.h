@@ -183,11 +183,6 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// \brief True if we are pre-expanding macro arguments.
   bool InMacroArgPreExpansion;
 
-  bool InBuildingMacroCache;
-  bool ErrorsWhileCaching;
-  bool NeedSourceLocs;
-
-
   /// \brief Mapping/lookup information for all identifiers in
   /// the program, including program keywords.
   mutable IdentifierTable Identifiers;
@@ -569,7 +564,6 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// reused for quick allocation.
   MacroArgs *MacroArgCache;
   friend class MacroArgs;
-  friend void TokenLexer::makeCachedExpansion();
   /// For each IdentifierInfo used in a \#pragma push_macro directive,
   /// we keep a MacroInfo stack used to restore the previous macro value.
   llvm::DenseMap<IdentifierInfo*, std::vector<MacroInfo*> > PragmaPushMacroInfo;
@@ -657,7 +651,6 @@ public:
                IdentifierInfoLookup *IILookup = nullptr,
                bool OwnsHeaderSearch = false,
                TranslationUnitKind TUKind = TU_Complete);
-  unsigned withSourceLocs;
   ~Preprocessor();
 
   Token *root;
@@ -724,31 +717,6 @@ public:
   /// \brief True if we are currently preprocessing a #if or #elif directive
   bool isParsingIfOrElifDirective() const { 
     return ParsingIfOrElifDirective;
-  }
-
-  bool isBuildingMacroCache() const {
-    return InBuildingMacroCache;
-  }
-
-  void setErrorsWhileCaching() {
-    ErrorsWhileCaching = true;
-  }
-
-  void setNeedsSLocs(bool needs = true) {
-    NeedSourceLocs = needs;
-  }
-
-  bool needsSLocs() const {
-    return NeedSourceLocs;
-  }
-
-  void pushMacro(MacroInfo *m) {
-    MacroStack.push_back(m);
-  }
-
-  void popMacro() {
-    assert(MacroStack.size());
-    MacroStack.pop_back();
   }
 
   /// \brief Control whether the preprocessor retains comments in output.
@@ -1790,7 +1758,6 @@ private:
                                   ArrayRef<Token> tokens);
   void removeCachedMacroExpandedTokensOfLastLexer();
   friend void TokenLexer::ExpandFunctionArguments();
-  friend void TokenLexer::ExpandFunctionArgumentsFromCache();
 
   /// Determine whether the next preprocessor token to be
   /// lexed is a '('.  If so, consume the token and return true, if not, this

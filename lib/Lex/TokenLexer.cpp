@@ -20,14 +20,8 @@
 using namespace clang;
 
 //#define DEBUG_PRINTS
-//#define WITH_LOCATIONS (!PP.isBuildingMacroCache() && (PP.withSourceLocs \
-  || (Macro && !Macro->isExpansionCacheValid() && Macro->canBeCached())))
-
-//#define WITH_LOCATIONS (PP.withSourceLocs)
-//#define WITH_LOCATIONS (!PP.isBuildingMacroCache() && (Macro && !Macro->isExpansionCacheValid() && Macro->canBeCached()))
 
 #define WITH_LOCATIONS false
-#define WITH_CACHE false
 
 #define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
                           X.dump(SM);\
@@ -35,13 +29,12 @@ using namespace clang;
                           llvm::errs() << "raw = " << X.getRawEncoding() << "\n";\
                           llvm::errs() << "\n";
 
-#define TOK_PARAM isUnexpandableArg
 template <class T>
 void DUMP_TOKEN_PTR(T tok, const char * end=" ") {
   if (tok->isAnyIdentifier())
-    llvm::errs() << tok->getIdentifierInfo()->getName() << "[" << tok->TOK_PARAM << "]";
+    llvm::errs() << tok->getIdentifierInfo()->getName();
   else
-    llvm::errs() << tok->getName() << "[" << tok->TOK_PARAM << "]";
+    llvm::errs() << tok->getName();
   llvm::errs() << end;
 }
 
@@ -91,21 +84,6 @@ namespace {
   }
 }
 
-template<class T>
-void validateToks(T toks, size_t sz) {
-  int balance = 0;
-  for (int i = 0; i < sz; i++) {
-    if (toks[i].is(tok::l_guard)) {
-      balance++;
-    } else if (toks[i].is(tok::r_guard)) {
-      balance--;
-    }
-
-    assert(balance >= 0);
-  }
-
-  assert(balance == 0);
-}
 static Token t;
 static int counter = 0;
 /// Create a TokenLexer for the specified macro with the specified actual
@@ -126,25 +104,13 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   Macro = MI;
   if (MI) {
     MI->incExpandedTimes();
-    //if (MI->needSlocs() != NO_SLOCS) {
-      //PP.withSourceLocs++;
-      //if (MI->needSlocs() == NO_INFO)
-      //  PP.pushMacro(MI);
-   // }
     counter++;
     if (!PP.root) {
       assert(counter == 1);
       t = Tok;
       PP.root = &t;
     }
-    /*if (!WITH_LOCATIONS && !PP.isBuildingMacroCache()) {
-      DUMP_TOKEN_PTR(&Tok);
-      llvm::errs() << MI->needSlocs() << "\n";
-    }*/
-    //llvm::errs() << "start with MI != 0: " << reinterpret_cast<long long>(this) << "\n";
   }
-  //else 
-  //  llvm::errs() << "start with MI = 0: " << reinterpret_cast<long long>(this) << "\n";
 
   ActualArgs = Actuals;
   CurToken = 0;
@@ -158,44 +124,13 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   DisableMacroExpansion = false;
   NumTokens = Macro->tokens_end()-Macro->tokens_begin();
   MacroExpansionStart = SourceLocation();
-  ReadingFromExpansionCache = false;
-  TokensFromCache.clear();
-  lexingMode = NORMAL;
 
-  validateToks(Tokens, NumTokens);
   //llvm::errs() << "Enter token: ";
   //DUMP_TOKEN_PTR(&Tok, "\n");
   SourceManager &SM = PP.getSourceManager();
   MacroStartSLocOffset = SM.getNextLocalOffset();
 
-  // let's consider simplest case
-  ReadingFromExpansionCache = Macro->isExpansionCacheValid();// && !PP.withSourceLocs;
-  if (ReadingFromExpansionCache) {
-    if (!Macro->allNonMacroIIsAreValid(PP)) {
-      ReadingFromExpansionCache = false;
-      Macro->setExpansionCacheValid(false);
-    } else {
-      Tokens = &*Macro->exp_tokens_begin();
-      NumTokens = Macro->getExpansionCache().size();
-
-     /* llvm::errs() << "Reading from cache:\n";
-       for (int i = 0; i < NumTokens; i++) {
-         DUMP_TOKEN_PTR(Tokens + i);
-       }
-
-       llvm::errs() << "\n";*/
-    }
-  }
-
-  /*for (int i = 0; i < NumTokens; i++) {
-    DUMP_TOKEN_PTR(Tokens + i);
-  }
-  llvm::errs() << "\n";*/
-
-
   if (NumTokens > 0) {
-   // llvm::errs() << "Tokens[0] = ";
-    //DUMP_TOKEN_PTR(Tokens, "\n");
     assert(Tokens[0].getLocation().isValid());
    // assert((Tokens[0].getLocation().isFileID() || Tokens[0].is(tok::comment)) &&
    //        "Macro defined in macro?");
@@ -235,26 +170,18 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   // If the client is reusing a TokenLexer, make sure to free any memory
   // associated with it.
   destroy();
-  /*if (NumToks) {
-    llvm::errs() << "Init of stream with following start: ";
-    DUMP_TOKEN_PTR(TokArray, "\n");
-  }*/
-  //llvm::errs() << "start without MI: " << reinterpret_cast<long long>(this) << "\n";
   Macro = nullptr;
   ActualArgs = nullptr;
   Tokens = TokArray;
   OwnsTokens = ownsTokens;
   DisableMacroExpansion = disableMacroExpansion;
   NumTokens = NumToks;
-  validateToks(Tokens, NumTokens);
   CurToken = 0;
   ExpandLocStart = ExpandLocEnd = SourceLocation();
   AtStartOfLine = false;
   HasLeadingSpace = false;
   NextTokGetsSpace = false;
   MacroExpansionStart = SourceLocation();
-  ReadingFromExpansionCache = false;
-  lexingMode = NORMAL;
   // Set HasLeadingSpace/AtStartOfLine so that the first token will be
   // returned unmodified.
   if (NumToks != 0) {
@@ -333,11 +260,6 @@ bool TokenLexer::MaybeRemoveCommaBeforeVaArgs(
 /// Expand the arguments of a function-like macro so that we can quickly
 /// return preexpanded tokens from Tokens.
 void TokenLexer::ExpandFunctionArguments() {
-  if (Macro->isVariadic() && PP.InBuildingMacroCache) {
-    PP.ErrorsWhileCaching = true;
-  }
-
-  SourceManager &SM = PP.getSourceManager();
   SmallVector<Token, 128> ResultToks;
   // Loop through 'Tokens', expanding them into ResultToks.  Keep
   // track of whether we change anything.  If not, no need to keep them.  If so,
@@ -354,30 +276,11 @@ void TokenLexer::ExpandFunctionArguments() {
     if (i != 0 && !Tokens[i-1].is(tok::hashhash) && CurTok.hasLeadingSpace())
       NextTokGetsSpace = true;
 
-    if (CurTok.isOneOf(tok::hash, tok::hashat) && !Tokens[i+1].isUnexpandableArg
-        && !Tokens[i+1].is(tok::l_guard)) {
+    if (CurTok.isOneOf(tok::hash, tok::hashat)) {
       int ArgNo = Macro->getArgumentNum(Tokens[i+1].getIdentifierInfo());
       assert(ArgNo != -1 && "Token following # is not an argument?");
 
       const Token * arg = ActualArgs->getUnexpArgument(ArgNo);
-
-
-      bool canStringify = true;
-      for (int j = 0; arg[j].isNot(tok::eof); j++) {
-        if (arg[j].isUnexpandableArg) {
-          canStringify = false;
-          break;
-        }
-      }
-
-      if (!canStringify) {
-        //ResultToks.push_back(CurTok); // !!! this approach leads to errors!
-        assert(PP.InBuildingMacroCache);
-        if (PP.InBuildingMacroCache)
-          PP.ErrorsWhileCaching = true;
-        //llvm::errs() << "can't stringify!\n";
-        continue;
-      }
 
       SourceLocation ExpansionLocStart = CurTok.getLocation();
       SourceLocation ExpansionLocEnd = Tokens[i + 1].getLocation();
@@ -418,23 +321,17 @@ void TokenLexer::ExpandFunctionArguments() {
     // Find out if there is a paste (##) operator before or after the token.
     bool NonEmptyPasteBefore =
       !ResultToks.empty() && ResultToks.back().is(tok::hashhash);
-    bool PasteBefore = i != 0 && Tokens[i-1].is(tok::hashhash) && (!Tokens[i].isUnexpandableArg);
-    bool PasteAfter = i+1 != e && Tokens[i+1].is(tok::hashhash) && (!Tokens[i].isUnexpandableArg);
+    bool PasteBefore = i != 0 && Tokens[i-1].is(tok::hashhash);
+    bool PasteAfter = i+1 != e && Tokens[i+1].is(tok::hashhash);
     //assert(!NonEmptyPasteBefore || PasteBefore);
 
     // Otherwise, if this is not an argument token, just add the token to the
     // output buffer.
     IdentifierInfo *II = CurTok.getIdentifierInfo();
-    int ArgNo = (II && !CurTok.isUnexpandableArg) ? Macro->getArgumentNum(II) : -1;
+    int ArgNo = (II) ? Macro->getArgumentNum(II) : -1;
     if (ArgNo == -1) {
       // This isn't an argument, just add it.
       ResultToks.push_back(CurTok);
-
-      if (CurTok.is(tok::l_guard)) {
-        nonArgumentGuards.push_back(ResultToks.size() - 1);
-      } else if (CurTok.is(tok::r_guard)) {
-        nonArgumentGuards.pop_back();
-      }
 
       if (NextTokGetsSpace) {
         ResultToks.back().setFlag(Token::LeadingSpace);
@@ -482,13 +379,6 @@ void TokenLexer::ExpandFunctionArguments() {
       if (ResultArgToks->isNot(tok::eof)) {
         unsigned FirstResult = ResultToks.size();
         unsigned NumToks = MacroArgs::getArgLength(ResultArgToks);
-        if (NumToks == 3 && !nonArgumentGuards.empty() &&
-            nonArgumentGuards.back() == FirstResult - 1 && i + 1 < e
-            && Tokens[i+1].is(tok::r_guard) &&
-                ResultArgToks[0].is(tok::l_guard)) {
-          ResultArgToks++;
-          NumToks -= 2;
-        }
 
 #ifdef DEBUG_PRINTS
      /*   llvm::errs() << "Substituted arg: \n";
@@ -496,7 +386,6 @@ void TokenLexer::ExpandFunctionArguments() {
           DUMP_TOKEN_PTR(ResultArgToks + k);
         llvm::errs() << "\n\n";*/
 #endif
-
         ResultToks.append(ResultArgToks, ResultArgToks+NumToks);
 
         // In Microsoft-compatibility mode, we follow MSVC's preprocessing
@@ -513,11 +402,8 @@ void TokenLexer::ExpandFunctionArguments() {
 
         for (unsigned i = FirstResult, e = ResultToks.size(); i != e; ++i) {
           Token &Tok = ResultToks[i];
-          if (Tok.is(tok::hashhash) &&
-                  !ResultToks[i-1].isUnexpandableArg && !ResultToks[i+1].isUnexpandableArg
-              && ResultToks[i-1].isNot(tok::r_guard) && ResultToks[i+1].isNot(tok::l_guard)) {
+          if (Tok.is(tok::hashhash)) {
             Tok.setKind(tok::unknown);
-            //Tok.setLocation(CurTok.getLocation());
           }
         }
         // TODO understand if this info should go to cache
@@ -566,9 +452,7 @@ void TokenLexer::ExpandFunctionArguments() {
         Token &Tok = ResultToks[i];
         //Tok.setLocation(CurTok.getLocation());
         if (Tok.is(tok::hashhash)) {
-          if (i+1 == e || i == 0 || (!ResultToks[i-1].isUnexpandableArg
-            && !ResultToks[i+1].isUnexpandableArg && ResultToks[i-1].isNot(tok::r_guard)
-                                                      && ResultToks[i+1].isNot(tok::l_guard)))
+          if (i+1 == e || i == 0)
             // keep this as hashhash if it should concat actual args later
           Tok.setKind(tok::unknown); // but now it has one of the arguments unexpandable
         }
@@ -629,133 +513,22 @@ void TokenLexer::ExpandFunctionArguments() {
   }
 
   // If anything changed, install this as the new Tokens list.
-  if (!ReadingFromExpansionCache) {
-    if (MadeChange) {
-      assert(!OwnsTokens && "This would leak if we already own the token list");
-      // This is deleted in the dtor.
-      NumTokens = ResultToks.size();
+  if (MadeChange) {
+    assert(!OwnsTokens && "This would leak if we already own the token list");
+    // This is deleted in the dtor.
+    NumTokens = ResultToks.size();
 
-      // The tokens will be added to Preprocessor's cache and will be removed
-      // when this TokenLexer finishes lexing them.
-      Tokens = PP.cacheMacroExpandedTokens(this, ResultToks);
+    // The tokens will be added to Preprocessor's cache and will be removed
+    // when this TokenLexer finishes lexing them.
+    Tokens = PP.cacheMacroExpandedTokens(this, ResultToks);
 
-      // The preprocessor cache of macro expanded tokens owns these tokens,not us.
-      OwnsTokens = false; // what for?
+    // The preprocessor cache of macro expanded tokens owns these tokens,not us.
+    OwnsTokens = false; // what for?
 
-      /*for (auto iter = ResultToks.begin(); iter != ResultToks.end(); ++iter)
-        DUMP_TOKEN_PTR(iter);
-      llvm::errs() << "\n\n";*/
-    }
-    return;
+    /*for (auto iter = ResultToks.begin(); iter != ResultToks.end(); ++iter)
+      DUMP_TOKEN_PTR(iter);
+    llvm::errs() << "\n\n";*/
   }
-
-
-#ifdef DEBUG_PRINTS
-  /*llvm::errs() << "After macro substitution: \n";
-  for (auto iter = ResultToks.begin(); iter != ResultToks.end(); ++iter)
-    DUMP_TOKEN_PTR(iter);
-  llvm::errs() << "\n\n";*/
-#endif
-  SmallVector<Token, 128> tokens;
-  SmallVector<unsigned, 8> guardsStack;
-  SmallVector<bool, 8> hadArgSinceLastGuard;
-
-  validateToks(ResultToks, ResultToks.size());
-  for (unsigned i = 0, e = ResultToks.size(); i != e; ++i) {
-    const Token &CurTok = ResultToks[i];
-    tokens.push_back(CurTok);
-
-    if (CurTok.isUnexpandableArg && !hadArgSinceLastGuard.empty()) {
-      hadArgSinceLastGuard.back() = true;
-    }
-
-    if (CurTok.is(tok::r_guard)) {
-      assert(!guardsStack.empty());
-      unsigned start = guardsStack.pop_back_val();
-
-      bool hadArg = hadArgSinceLastGuard.pop_back_val();
-
-      if (!hadArgSinceLastGuard.empty() && !hadArgSinceLastGuard.back()) {
-        hadArgSinceLastGuard.back() = hadArg;
-      }
-
-      const size_t size_before = start + hadArg;
-      const size_t tokens_inside = tokens.size() - start;
-      // else try fast pass: if it's just guard tok guard, and tok can't expand, go on
-      if (hadArg || canExpandSomething(&*tokens.begin() + start + 1, tokens_inside - 2, PP)) {
-        SmallVector<Token, 8> source;
-        source.append(std::next(tokens.begin(), start + 1),
-                      std::prev(tokens.end()));
-        tokens.erase(std::next(tokens.begin(), start + hadArg), tokens.end());
-
-
-        PP.EnterTokenStream(&*source.begin(), source.size(), false, false);
-        Token Tok;
-        PP.CurTokenLexer->lexingMode = GUARD_EXPANSION;
-        PP.Lex(Tok);
-
-        while (Tok.isNot(tok::eof)) {
-          tokens.push_back(Tok);
-          PP.Lex(Tok);
-        }
-      } else { // just remove guards
-        //llvm::errs() << "hit with " << tokens_inside <<  " !\n";
-        for (int j = 0; j < tokens_inside - 2; j++)
-          tokens[start + j] = tokens[start + 1 + j];
-        tokens.pop_back();
-        tokens.pop_back();
-      }
-
-
-      // remove ## if following arg expanded into nothing
-      if (size_before == tokens.size() && !tokens.empty() && tokens.back().is(tok::hashhash)) {
-        tokens.pop_back();
-        start--;
-      }
-
-      if (hadArg) {
-        tokens.push_back(CurTok);
-      } else if (start > 0 && tokens[start-1].is(tok::hash)) {
-        SourceLocation ExpansionLocStart = tokens[start-1].getLocation();
-        SourceLocation ExpansionLocEnd = tokens.back().isNot(tok::hash) ?
-                                         tokens.back().getLocation() : ExpansionLocStart;
-        assert(false);
-        Token eof;
-        eof.startToken();
-        eof.setKind(tok::eof);
-        tokens.push_back(eof);
-
-        const Token *arg = &*tokens.begin() + start;
-        Token Res = MacroArgs::StringifyArgument(arg,
-                                             PP, false,
-                                             ExpansionLocStart,
-                                             ExpansionLocEnd);
-        Res.setFlag(Token::StringifiedInMacro);
-        tokens.erase(std::next(tokens.begin(), start - 1), tokens.end());
-        tokens.push_back(Res);
-      }
-#ifdef DEBUG_PRINTS
-      /*llvm::errs() << "After removing pair of guards: \n";
-      for (auto iter = tokens.begin(); iter != tokens.end(); ++iter)
-        DUMP_TOKEN_PTR(iter);
-      llvm::errs() << "\n\n";*/
-#endif
-    } else if (CurTok.is(tok::l_guard)) {
-      guardsStack.push_back(tokens.size() - 1);
-      hadArgSinceLastGuard.push_back(false);
-    }
-  }
-
-  NumTokens = tokens.size();
-  Tokens = PP.cacheMacroExpandedTokens(this, tokens);
-  OwnsTokens = false; // what for?
-
-#ifdef DEBUG_PRINTS
-  /*llvm::errs() << "After all substitutions:\n";
-  for (auto iter = tokens.begin(); iter != tokens.end(); ++iter)
-    DUMP_TOKEN_PTR(iter);
-  llvm::errs() << "\n\n";*/
-#endif
 }
 
 /// \brief Checks if two tokens form wide string literal.
@@ -771,42 +544,18 @@ static bool isWideStringLiteralFromMacro(const Token &FirstTok,
 bool TokenLexer::Lex(Token &Tok) {
   // Lexing off the end of the macro, pop this macro off the expansion stack.
   if (isAtEnd()) {
-    //llvm::errs() << "exit: " << reinterpret_cast<long long>(this) << "\n";
     // If this is a macro (not a token stream), mark the macro enabled now
     // that it is no longer being expanded.
 
     if (Macro) {
       counter--;
-      /*if (Macro->needSlocs() != NO_SLOCS) {
-        PP.withSourceLocs--;
-      }*/
-
       if (counter == 0) {
         PP.root = 0;
       }
 
-      /*if (Macro->needSlocs() == NO_INFO) {
-        Macro->setSLocsRelation(SLocsRelation::NO_SLOCS);
-        PP.popMacro();
-      }*/
-    }
-
-    if (Macro && !Macro->isEnabled()) {
+      if (!Macro->isEnabled()) { // always true?!
         Macro->EnableMacro();
-    }
-
-    if (lexingMode != NORMAL) {
-      Tok.startToken();
-
-#ifdef DEBUG_PRINTS
-      if (Macro && !MACRO_STACK.empty()) {
-        MACRO_STACK.pop_back();
       }
-#endif
-
-      PP.HandleEndOfTokenLexer(Tok);
-      Tok.setKind(tok::eof);
-      return true;
     }
 
     Tok.startToken();
@@ -815,15 +564,6 @@ bool TokenLexer::Lex(Token &Tok) {
     if (CurToken == 0)
       Tok.setFlag(Token::LeadingEmptyMacro);
 
-    //if (PP.NeedSourceLocs)
-    if (WITH_CACHE && Macro && Macro->canBeCached() && !Macro->isExpansionCacheValid()
-        && !PP.isBuildingMacroCache() && Macro->expandedTimes() > 0) {
-      Macro->DisableMacro();
-      makeCachedExpansion();
-
-      if (!Macro->isEnabled())
-        Macro->EnableMacro();
-    }
 #ifdef DEBUG_PRINTS
     if (Macro && !MACRO_STACK.empty()){
       MACRO_STACK.pop_back();
@@ -845,13 +585,11 @@ bool TokenLexer::Lex(Token &Tok) {
 
   bool TokenIsFromPaste = false;
 
-  bool canPasteTokens = !isAtEnd() && !Tok.isUnexpandableArg &&
-          !Tokens[CurToken+1].isUnexpandableArg && Tok.isNot(tok::r_guard)
-            &&  Tokens[CurToken+1].isNot(tok::l_guard);
+  bool canPasteTokens = !isAtEnd();
 
   // If this token is followed by a token paste (##) operator, paste the tokens!
   // Note that ## is a normal token when not expanding a macro.
-  if (canPasteTokens && (Macro || lexingMode != NORMAL)  &&
+  if (canPasteTokens && Macro  &&
       (Tokens[CurToken].is(tok::hashhash) ||
        // Special processing of L#x macros in -fms-compatibility mode.
        // Microsoft compiler is able to form a wide string literal from
@@ -865,14 +603,6 @@ bool TokenLexer::Lex(Token &Tok) {
    // DUMP_TOKEN_PTR(&Tok);
     //llvm::errs() << "\n";
     bool result = PasteTokens(Tok);
-    if (Macro && !Macro->isExpansionCacheValid() && Tok.isAnyIdentifier()) {
-      IdentifierInfo *II = Tok.getIdentifierInfo();
-      if (!II->hasMacroDefinition())
-        Macro->addNonMacroII(Tok.getIdentifierInfo());
-      else
-        MacroInfo::addDependency(Macro, PP.getMacroInfo(II));
-    }
-
     if (result)
       return true;
 
@@ -893,9 +623,6 @@ bool TokenLexer::Lex(Token &Tok) {
   }
   AtStartOfLine = false;
   HasLeadingSpace = false;
-
-  if (Tok.isUnexpandableArg)
-    return true;
 
   // The token's current location indicate where the token was lexed from.  We
   // need this information to compute the spelling of the token, but any
@@ -936,15 +663,6 @@ bool TokenLexer::Lex(Token &Tok) {
     }
 
     if (!DisableMacroExpansion && II->isHandleIdentifierCase()) {
-      //if (PP.getMacroInfo(II))
-
-      if (Macro && !Macro->isExpansionCacheValid()) {
-        if (II->hasMacroDefinition())
-          MacroInfo::addDependency(Macro, PP.getMacroInfo(II));
-        else if (Tok.isAnyIdentifier())
-          Macro->addNonMacroII(II);
-      }
-
       return PP.HandleIdentifier(Tok);
     }
   }
@@ -1082,13 +800,6 @@ bool TokenLexer::PasteTokens(Token &Tok) {
           // If we're in microsoft extensions mode, downgrade this from a hard
           // error to an extension that defaults to an error.  This allows
           // disabling it.
-          if (PP.isBuildingMacroCache()) {
-            PP.setErrorsWhileCaching();
-            break;
-          } else {
-            llvm::errs() << "not building macro cache\n";
-          }
-
           PP.Diag(Loc, PP.getLangOpts().MicrosoftExt ? diag::ext_pp_bad_paste_ms
                                                      : diag::err_pp_bad_paste)
               << Buffer;
@@ -1111,8 +822,7 @@ bool TokenLexer::PasteTokens(Token &Tok) {
     // Finally, replace LHS with the result, consume the RHS, and iterate.
     ++CurToken;
     Tok = Result;
-  } while (!isAtEnd() && Tokens[CurToken].is(tok::hashhash) &&
-          !Tokens[CurToken + 1].isUnexpandableArg && Tokens[CurToken + 1].isNot(tok::l_guard));
+  } while (!isAtEnd() && Tokens[CurToken].is(tok::hashhash));
 
   SourceLocation EndLoc = Tokens[CurToken - 1].getLocation();
 
@@ -1161,9 +871,7 @@ unsigned TokenLexer::isNextTokenLParen() const {
   // Out of tokens?
   // TODO here need proper answer while using cache
   if (isAtEnd()) {
-    if (lexingMode == NORMAL)
-      return 2;
-    return 0;
+    return 2;
   }
 
   return Tokens[CurToken].is(tok::l_paren);
@@ -1311,101 +1019,4 @@ void TokenLexer::updateLocForMacroArgTokens(SourceLocation ArgIdSpellLoc,
 void TokenLexer::PropagateLineStartLeadingSpaceInfo(Token &Result) {
   AtStartOfLine = Result.isAtStartOfLine();
   HasLeadingSpace = Result.hasLeadingSpace();
-}
-
-void TokenLexer::makeCachedExpansion() {
-  if (!WITH_CACHE)
-    return;
-
-  PP.InBuildingMacroCache = true;
-
-  if (Macro->isVariadic()) {
-    Macro->setCanBeCached(false);
-    PP.InBuildingMacroCache = false;
-    return;
-  }
-
-#ifdef DEBUG_PRINTS
-  llvm::errs() << "makeCachedExpansion() for ";
-  assert(MACRO_STACK.size());
-  DUMP_TOKEN_PTR(MACRO_STACK.rbegin(), "\n");
-  llvm::errs() << "input:\n";
-#endif
-
-  SmallVector<Token, 8> tokens;
-  tokens.reserve(Macro->getNumTokens());
-
-  size_t bufSize = Macro->tokens().size();
-  for (size_t i = 0; i < bufSize; i++) {
-    if ((i == 0 || !tokenForbidsEpansion(tokens.back())) &&
-            getArgNum(Macro->tokens()[i], Macro) != -1 &&
-            (i + 1 == bufSize || !tokenForbidsEpansion(Macro->tokens()[i + 1]))) {
-      Token guard;
-      guard.startToken();
-      guard.setKind(tok::l_guard);
-      guard.setLocation(Macro->tokens()[i].getLocation());
-      tokens.push_back(guard);
-      tokens.push_back(Macro->tokens()[i]);
-      tokens.back().isUnexpandableArg = true;
-      guard.setKind(tok::r_guard);
-      tokens.push_back(guard);
-      continue;
-    }
-
-    tokens.push_back(Macro->tokens()[i]);
-    if (getArgNum(tokens.back(), Macro) != -1)
-      tokens.back().isUnexpandableArg = true;
-  }
-
-#ifdef DEBUG_PRINTS
-  for (auto tok = tokens.begin(); tok != tokens.end(); ++tok){
-    DUMP_TOKEN_PTR(tok);
-  }
-  llvm::errs() << "\n\n";
-#endif
-
-  SmallVector<Token, 8> Result;
-  PP.EnterTokenStream(&*tokens.begin(), tokens.size(), false, false);
-  bool oldPPDisableExpansion = PP.DisableMacroExpansion;
-
-  PP.DisableMacroExpansion = false;
-  PP.CurTokenLexer->lexingMode = CACHE_CREATION;
-
-  do {
-    Result.push_back(Token());
-    Token &Tok = Result.back();
-    PP.Lex(Tok);
-    Tok.isUnexpandableArg = false;
-  } while (Result.back().isNot(tok::eof));
-  if (PP.ErrorsWhileCaching) {
-#ifdef DEBUG_PRINTS
-    llvm::errs() << "Errors while caching! Exiting...\n";
-#endif
-    PP.ErrorsWhileCaching = false;
-    Macro->setCanBeCached(false);
-    //Macro->setSLocsRelation(PP.NeedSourceLocs ? SLocsRelation::SLOCS : SLocsRelation::NO_SLOCS);
-    //PP.NeedSourceLocs = false;
-    PP.InBuildingMacroCache = false;
-    PP.DisableMacroExpansion = oldPPDisableExpansion;
-    return;
-  }
-
-  Result.pop_back();
-  assert(lexingMode != GUARD_EXPANSION && "Sanity check failed!");
-
-  Macro->resetCache(std::move(Result));
-#ifdef DEBUG_PRINTS
-  llvm::errs() << "Result for ";
-  DUMP_TOKEN_PTR(MACRO_STACK.rbegin(), ":\n");
-
-  for (auto tok = Macro->getExpansionCache().begin(); tok != Macro->getExpansionCache().end(); ++tok){
-    DUMP_TOKEN_PTR(tok);
-  }
-  llvm::errs() << "\n\n";
-#endif
-
-  PP.DisableMacroExpansion = oldPPDisableExpansion;
-  Macro->setExpansionCacheValid(true);
-  //llvm::errs() << "END of makeCachedExpansion()\n";
-  PP.InBuildingMacroCache = false;
 }

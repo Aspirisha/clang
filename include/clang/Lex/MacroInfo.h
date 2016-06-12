@@ -20,7 +20,6 @@
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Allocator.h"
 #include <cassert>
 
@@ -29,11 +28,6 @@ class Module;
 class ModuleMacro;
 class Preprocessor;
 
-  enum SLocsRelation {
-    SLOCS,
-    NO_SLOCS,
-    NO_INFO
-  };
 
 /// \brief Encapsulates the data about a macro definition (e.g. its tokens).
 ///
@@ -118,12 +112,6 @@ class MacroInfo {
   /// \brief Whether this macro was used as header guard.
   bool UsedForHeaderGuard : 1;
 
-  // andy: if currently expansion cache is valid. Currently only
-  // for function-like macros
-  bool IsExpansionCached : 1;
-  SmallVector<Token, 8> ExpCache;
-  bool CanBeCached : 1; // if caching leads to errors, hell no, it can't
-  SLocsRelation needsSLocs;
   size_t expanded;
 
   llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
@@ -279,65 +267,6 @@ public:
   }
 
   typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
-  bool allNonMacroIIsAreValid(const Preprocessor &PP) const;
-  void addNonMacroII(const IdentifierInfo *II);
-
-  void addTokenToExpansionCache(const Token &Tok);
-  /*void resetCache(const SmallVector<Token, 8> &Toks) {
-    ExpCache = Toks;
-  }*/
-
-  void resetCache(SmallVector<Token, 8> && Toks) {
-    ExpCache = std::move(Toks);
-  }
-
-  void setExpansionCacheValid(bool valid);
-  void clearExpansionCache() {
-    ExpCache.clear();
-  }
-  static bool addDependency(MacroInfo *depending, MacroInfo *master);
-  static bool removeDependency(MacroInfo *depending, MacroInfo *master);
-
-  bool canBeCached() const {
-    return CanBeCached;
-  }
-
-  void setCanBeCached(bool canBeCached) {
-    CanBeCached = canBeCached;
-  }
-
-  void setSLocsRelation(SLocsRelation slocRel) {
-    needsSLocs = slocRel;
-  }
-
-  SLocsRelation needSlocs() const {
-    return needsSLocs;
-  }
-
-  bool isExpansionCacheValid() const {
-    return IsExpansionCached;
-  }
-
-  tokens_iterator exp_tokens_begin() const {
-    return ExpCache.begin();
-  }
-
-  tokens_iterator exp_tokens_end() const
-  { return ExpCache.end(); }
-
-  const SmallVector<Token, 8>& getExpansionCache() const
-  { return ExpCache; }
-
-  bool cachedExpansionEmpty() const { return ExpCache.empty(); }
-
-  depends_iterator depending_on_this_begin() const
-  { return DependingOnThisMIs.begin();}
-
-  depends_iterator depending_on_this_end() const
-  { return DependingOnThisMIs.end();}
-
-
-
 
   /// In other words, that we are not currently in an expansion of this macro.
   bool isEnabled() const { return !IsDisabled; }

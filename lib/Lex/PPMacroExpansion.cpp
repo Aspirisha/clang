@@ -456,9 +456,6 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
 
     // If there was an error parsing the arguments, bail out.
     if (!Args) {
-      if (InBuildingMacroCache) {
-        ErrorsWhileCaching = true;
-      }
       return true;
     }
 
@@ -545,12 +542,6 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     // Restore the StartOfLine/LeadingSpace markers.
     Identifier.setFlagValue(Token::StartOfLine , isAtStartOfLine);
     Identifier.setFlagValue(Token::LeadingSpace, hasLeadingSpace);
-
-    // create expansion cache
-    if (!MI->isExpansionCacheValid()) {
-      MI->addTokenToExpansionCache(Identifier);
-      MI->setExpansionCacheValid(true);
-    }
 
     // Update the tokens location to include both its expansion and physical
     // locations.
@@ -764,11 +755,10 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       //                 Tok.getIdentifierInfo()->getName() : Tok.getName()) << " ";
       if (Tok.isOneOf(tok::eof, tok::eod)) { // "#if f(<eof>" & "#if f(\n"
         if (!ContainsCodeCompletionTok) {
-          if (!InBuildingMacroCache) {
-            Diag(MacroName, diag::err_unterm_macro_invoc);
-            Diag(MI->getDefinitionLoc(), diag::note_macro_here)
+          Diag(MacroName, diag::err_unterm_macro_invoc);
+          Diag(MI->getDefinitionLoc(), diag::note_macro_here)
               << MacroName.getIdentifierInfo();
-          }
+
           // Do not lose the EOF/EOD.  Return it to the client.
           MacroName = Tok;
           return nullptr;
@@ -869,12 +859,10 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       !ContainsCodeCompletionTok) {
     // Emit the diagnostic at the macro name in case there is a missing ).
     // Emitting it at the , could be far away from the macro name.
-    if (!InBuildingMacroCache) {
           
-      Diag(TooManyArgsLoc, diag::err_too_many_args_in_macro_invoc);
-      Diag(MI->getDefinitionLoc(), diag::note_macro_here)
+    Diag(TooManyArgsLoc, diag::err_too_many_args_in_macro_invoc);
+    Diag(MI->getDefinitionLoc(), diag::note_macro_here)
         << MacroName.getIdentifierInfo();
-    }
     // Commas from braced initializer lists will be treated as argument
     // separators inside macros.  Attempt to correct for this with parentheses.
     // TODO: See if this can be generalized to angle brackets for templates
@@ -953,9 +941,6 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       isVarargsElided = true;
     } else if (!ContainsCodeCompletionTok) {
       // Otherwise, emit the error.
-      if (InBuildingMacroCache) {
-        return nullptr;
-      }
       Diag(Tok, diag::err_too_few_args_in_macro_invoc);
       Diag(MI->getDefinitionLoc(), diag::note_macro_here)
         << MacroName.getIdentifierInfo();
@@ -978,9 +963,6 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
              !ContainsCodeCompletionTok) {
     // Emit the diagnostic at the macro name in case there is a missing ).
     // Emitting it at the , could be far away from the macro name.
-    if (InBuildingMacroCache) {
-      return nullptr;
-    }
     Diag(MacroName, diag::err_too_many_args_in_macro_invoc);
     Diag(MI->getDefinitionLoc(), diag::note_macro_here)
       << MacroName.getIdentifierInfo();
@@ -1502,17 +1484,6 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
   Tok.clearFlag(Token::NeedsCleaning);
 
   if (II == Ident__LINE__) {
-    /*for (MacroInfo* m : MacroStack) {
-      if (m->needSlocs() == NO_INFO) {
-        m->setSLocsRelation(SLOCS);
-      }
-    }*/
-
-    //MacroStack.clear();
-    if (isBuildingMacroCache()) {
-      setErrorsWhileCaching();
-      //setNeedsSLocs();
-    }
     // C99 6.10.8: "__LINE__: The presumed line number (within the current
     // source file) of the current source line (an integer constant)".  This can
     // be affected by #line.
@@ -1667,12 +1638,6 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
 
     int Value = 0;
     if (!IsValid) {
-
-      if (InBuildingMacroCache) {
-        ErrorsWhileCaching = true;
-        return;
-      }
-
       Diag(StartLoc, diag::err_feature_check_malformed);
     }
     else if (II == Ident__is_identifier)

@@ -30,10 +30,7 @@ MacroInfo::MacroInfo(SourceLocation DefLoc)
     IsAllowRedefinitionsWithoutWarning(false),
     IsWarnIfUnused(false),
     FromASTFile(false),
-    CanBeCached(true),
     UsedForHeaderGuard(false),
-    IsExpansionCached(false),
-    needsSLocs(NO_INFO),
     expanded(0)
 {
 }
@@ -248,47 +245,6 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
       llvm::alignOf<ModuleMacro>());
   return new (Mem) ModuleMacro(OwningModule, II, Macro, Overrides);
 }
-
-
-// andy
-void MacroInfo::addTokenToExpansionCache(const Token &Tok) {
-  ExpCache.push_back(Tok);
-}
-
-void MacroInfo::setExpansionCacheValid(bool valid)
-{
-  if (IsExpansionCached == valid)
-    return;
-
-  IsExpansionCached = valid;
-  if (!valid) {
-    ExpCache.clear();
-    NonMacroInBodyIIs.clear();
-    //llvm::errs() << "redefine\n";
-    for (auto dep : DependingOnThisMIs)
-      dep->setExpansionCacheValid(false);
-  }
-}
-
-bool MacroInfo::addDependency(MacroInfo *depending, MacroInfo *master)
-{
-  assert(depending && master && "Should not insert nullptr dependecies");
-  bool res2 = master->DependingOnThisMIs.insert(depending).second;
-  return res2;
-}
-
-bool MacroInfo::allNonMacroIIsAreValid(const Preprocessor &PP) const {
-  for (const IdentifierInfo *II : NonMacroInBodyIIs) {
-    if (nullptr != PP.getMacroInfo(II))
-      return false;
-  }
-  return true;
-}
-
-void MacroInfo::addNonMacroII(const IdentifierInfo *II) {
-  NonMacroInBodyIIs.insert(II);
-}
-
 
 MacroInfo::~MacroInfo() {
   //llvm::errs() << "Deleting MacroInfo ";

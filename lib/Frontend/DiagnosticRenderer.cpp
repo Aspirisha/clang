@@ -313,7 +313,7 @@ retrieveMacroLocation(SourceLocation Loc, FileID MacroFileID,
                       FileID CaretFileID,
                       const SmallVectorImpl<FileID> &CommonArgExpansions,
                       bool IsBegin, const SourceManager *SM) {
-  assert(SM->getFileID(Loc) == MacroFileID);
+  //assert(SM->getFileID(Loc) == MacroFileID);
   if (MacroFileID == CaretFileID)
     return Loc;
   if (!Loc.isMacroID())
