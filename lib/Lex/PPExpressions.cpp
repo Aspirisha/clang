@@ -164,12 +164,6 @@ static bool EvaluateValue(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
                           bool ValueLive, Preprocessor &PP) {
   DT.State = DefinedTracker::Unknown;
 
-  /*llvm::errs() << "here!\n";
-  if (PeekTok.getIdentifierInfo())
-    llvm::errs() << PeekTok.getIdentifierInfo()->getName() << "\n";
-  else
-    llvm::errs() << PeekTok.getName() << "\n";*/
-
   if (PeekTok.is(tok::code_completion)) {
     if (PP.getCodeCompletionHandler())
       PP.getCodeCompletionHandler()->CodeCompletePreprocessorExpression();
@@ -185,7 +179,6 @@ static bool EvaluateValue(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
     if (II->isStr("defined"))
       return(EvaluateDefined(Result, PeekTok, DT, ValueLive, PP));
 
-
     // If this identifier isn't 'defined' or one of the special
     // preprocessor keywords and it wasn't macro expanded, it turns
     // into a simple 0, unless it is the C++ keyword "true", in which case it
@@ -197,7 +190,6 @@ static bool EvaluateValue(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
     Result.Val = II->getTokenID() == tok::kw_true;
     Result.Val.setIsUnsigned(false);  // "0" is signed intmax_t 0.
     Result.setRange(PeekTok.getLocation());
-
     PP.LexNonComment(PeekTok);
     return false;
   }

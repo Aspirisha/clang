@@ -15,7 +15,6 @@
 #define LLVM_CLANG_LEX_TOKENLEXER_H
 
 #include "clang/Basic/SourceLocation.h"
-#include <list>
 
 namespace clang {
   class MacroInfo;
@@ -98,8 +97,6 @@ class TokenLexer {
   /// DisableMacroExpansion - This is true when tokens lexed from the TokenLexer
   /// should not be subject to further macro expansion.
   bool DisableMacroExpansion : 1;
-  
-  std::list<Token> TokensFromCache;
 
   TokenLexer(const TokenLexer &) = delete;
   void operator=(const TokenLexer &) = delete;

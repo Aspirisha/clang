@@ -171,9 +171,7 @@ void Preprocessor::EnterMacro(Token &Tok, SourceLocation ILEnd,
 
   PushIncludeMacroStack();
   CurDirLookup = nullptr;
-  //auto mode = CurTokenLexer ? CurTokenLexer->lexingMode : TokenLexer::NORMAL;
   CurTokenLexer = std::move(TokLexer);
-  //CurTokenLexer->lexingMode = mode;
   if (CurLexerKind != CLK_LexAfterModuleImport)
     CurLexerKind = CLK_TokenLexer;
 }
@@ -225,9 +223,7 @@ void Preprocessor::EnterTokenStream(const Token *Toks, unsigned NumToks,
   // Save our current state.
   PushIncludeMacroStack();
   CurDirLookup = nullptr;
-  //auto mode = CurTokenLexer ? CurTokenLexer->lexingMode : TokenLexer::NORMAL;
   CurTokenLexer = std::move(TokLexer);
-  //CurTokenLexer->lexingMode = mode;
   if (CurLexerKind != CLK_LexAfterModuleImport)
     CurLexerKind = CLK_TokenLexer;
 }
@@ -373,6 +369,7 @@ bool Preprocessor::HandleEndOfFile(Token &Result, bool isEndOfMacro) {
   // If this is a #include'd file, pop it off the include stack and continue
   // lexing the #includer file.
   if (!IncludeMacroStack.empty()) {
+
     // If we lexed the code-completion file, act as if we reached EOF.
     if (isCodeCompletionEnabled() && CurPPLexer &&
         SourceMgr.getLocForStartOfFile(CurPPLexer->getFileID()) ==

@@ -419,7 +419,6 @@ bool Preprocessor::isNextPPTokenLParen() {
 bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
                                                  const MacroDefinition &M) {
   MacroInfo *MI = M.getMacroInfo();
-  //llvm::errs() << "Expanding macro: " << Identifier.getIdentifierInfo()->getName() << "\n";
   // If this is a macro expansion in the "#if !defined(x)" line for the file,
   // then the macro could expand to different things in other contexts, we need
   // to disable the optimization in this case.
@@ -455,9 +454,7 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     InMacroArgs = false;
 
     // If there was an error parsing the arguments, bail out.
-    if (!Args) {
-      return true;
-    }
+    if (!Args) return true;
 
     ++NumFnMacroExpanded;
   } else {
@@ -519,7 +516,6 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     Identifier.setFlag(Token::LeadingEmptyMacro);
     PropagateLineStartLeadingSpaceInfo(Identifier);
     ++NumFastMacroExpanded;
-
     return false;
   } else if (MI->getNumTokens() == 1 &&
              isTrivialSingleTokenExpansion(MI, Identifier.getIdentifierInfo(),
@@ -555,7 +551,7 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     if (IdentifierInfo *NewII = Identifier.getIdentifierInfo()) {
       if (MacroInfo *NewMI = getMacroInfo(NewII))
         if (!NewMI->isEnabled() || NewMI == MI) {
-          Identifier.setFlag(Token::DisableExpand); // TODO set same thing got exp cache
+          Identifier.setFlag(Token::DisableExpand);
           // Don't warn for "#define X X" like "#define bool bool" from
           // stdbool.h.
           if (NewMI != MI || MI->isFunctionLike())
@@ -566,7 +562,6 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     // Since this is not an identifier token, it can't be macro expanded, so
     // we're done.
     ++NumFastMacroExpanded;
-
     return true;
   }
 
@@ -731,7 +726,6 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
   SourceLocation TooManyArgsLoc;
 
   unsigned NumActuals = 0;
-  //llvm::errs() << "===========================\nReadFunctionLikeMacroArgs()\n";
   while (Tok.isNot(tok::r_paren)) {
 
     if (ContainsCodeCompletionTok && Tok.isOneOf(tok::eof, tok::eod))
@@ -751,14 +745,12 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       // Read arguments as unexpanded tokens.  This avoids issues, e.g., where
       // an argument value in a macro could expand to ',' or '(' or ')'.
       LexUnexpandedToken(Tok);
-     // llvm::errs() << (Tok.getIdentifierInfo() ?
-      //                 Tok.getIdentifierInfo()->getName() : Tok.getName()) << " ";
+
       if (Tok.isOneOf(tok::eof, tok::eod)) { // "#if f(<eof>" & "#if f(\n"
         if (!ContainsCodeCompletionTok) {
           Diag(MacroName, diag::err_unterm_macro_invoc);
           Diag(MI->getDefinitionLoc(), diag::note_macro_here)
-              << MacroName.getIdentifierInfo();
-
+            << MacroName.getIdentifierInfo();
           // Do not lose the EOF/EOD.  Return it to the client.
           MacroName = Tok;
           return nullptr;
@@ -859,10 +851,10 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       !ContainsCodeCompletionTok) {
     // Emit the diagnostic at the macro name in case there is a missing ).
     // Emitting it at the , could be far away from the macro name.
-          
     Diag(TooManyArgsLoc, diag::err_too_many_args_in_macro_invoc);
     Diag(MI->getDefinitionLoc(), diag::note_macro_here)
-        << MacroName.getIdentifierInfo();
+      << MacroName.getIdentifierInfo();
+
     // Commas from braced initializer lists will be treated as argument
     // separators inside macros.  Attempt to correct for this with parentheses.
     // TODO: See if this can be generalized to angle brackets for templates
@@ -969,7 +961,6 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
     return nullptr;
   }
 
-  //llvm::errs() << "\n=================================\n";
   return MacroArgs::create(MI, ArgTokens, isVarargsElided, *this);
 }
 
@@ -1487,7 +1478,8 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     // C99 6.10.8: "__LINE__: The presumed line number (within the current
     // source file) of the current source line (an integer constant)".  This can
     // be affected by #line.
-    SourceLocation Loc = (root) ? root->getLocation() : Tok.getLocation();
+    SourceLocation Loc = (TopExpandingMacroToken) ?
+                         TopExpandingMacroToken->getLocation() : Tok.getLocation();
 
     // Advance to the location of the first _, this might not be the first byte
     // of the token if it starts with an escaped newline.
@@ -1637,9 +1629,8 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     }
 
     int Value = 0;
-    if (!IsValid) {
+    if (!IsValid)
       Diag(StartLoc, diag::err_feature_check_malformed);
-    }
     else if (II == Ident__is_identifier)
       Value = FeatureII->getTokenID() == tok::identifier;
     else if (II == Ident__has_builtin) {

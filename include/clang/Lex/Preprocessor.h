@@ -306,8 +306,6 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// One of CurLexer and CurTokenLexer must be null.
   std::unique_ptr<TokenLexer> CurTokenLexer;
 
-  std::vector<MacroInfo*> MacroStack;
-
   /// \brief The kind of lexer we're currently working with.
   enum CurLexerKind {
     CLK_Lexer,
@@ -653,7 +651,11 @@ public:
                TranslationUnitKind TUKind = TU_Complete);
   ~Preprocessor();
 
-  Token *root;
+  // If we are currently expanding some macro and expansion location tracking
+  // is switched off (-no-macro-exploc-tracking), it points to a top-level macro
+  // token that is currently being expanded.
+  // It is used to compute proper __LINE__ information
+  Token *TopExpandingMacroToken;
 
   /// \brief Initialize the preprocessor using information about the target.
   ///

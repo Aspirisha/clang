@@ -2110,14 +2110,6 @@ bool SourceManager::isBeforeInTranslationUnit(SourceLocation LHS,
     assert(LOffs.first == ROffs.first);
     return false;
   }
-
-  LHS.dump(*this);
-  llvm::errs() << "\n";
-  RHS.dump(*this);
-  llvm::errs() << "\n";
-  //llvm::errs() << LBuf->getBufferIdentifier() << "\n";
-  //llvm::errs() << RBuf->getBufferIdentifier() << "\n";
-  //return true;
   llvm_unreachable("Unsortable locations found");
 }
 

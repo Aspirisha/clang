@@ -653,7 +653,6 @@ static void PrintPreprocessedTokens(Preprocessor &PP, Token &Tok,
     } else if (Tok.getLength() < 256) {
       const char *TokPtr = Buffer;
       unsigned Len = PP.getSpelling(Tok, TokPtr);
-
       OS.write(TokPtr, Len);
 
       // Tokens that can contain embedded newlines need to adjust our current

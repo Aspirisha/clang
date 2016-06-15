@@ -491,7 +491,6 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
 
   // The compilation takes ownership of Args.
   Compilation *C = new Compilation(*this, TC, UArgs.release(), TranslatedArgs);
-
   C->setCudaDeviceToolChain(
       &getToolChain(C->getArgs(), llvm::Triple(TC.getTriple().isArch64Bit()
                                                    ? "nvptx64-nvidia-cuda"
@@ -510,7 +509,6 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   else
     BuildActions(*C, C->getDefaultToolChain(), C->getArgs(), Inputs,
                  C->getActions());
-
   if (CCCPrintPhases) {
     PrintActions(*C);
     return C;
@@ -1646,7 +1644,6 @@ void Driver::BuildJobs(Compilation &C) const {
       else
         LinkingOutput = getDefaultImageName();
     }
-
     BuildJobsForAction(C, A, &C.getDefaultToolChain(),
                        /*BoundArch*/ nullptr,
                        /*AtTopLevel*/ true,

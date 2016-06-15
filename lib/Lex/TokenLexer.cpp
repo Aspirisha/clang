@@ -17,72 +17,8 @@
 #include "clang/Lex/MacroArgs.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Lex/PreprocessorOptions.h"
 using namespace clang;
-
-//#define DEBUG_PRINTS
-
-#define WITH_LOCATIONS false
-
-#define DUMP_LOCATION(X) llvm::errs() << #X" = ";\
-                          X.dump(SM);\
-                          llvm::errs() << "\n";\
-                          llvm::errs() << "raw = " << X.getRawEncoding() << "\n";\
-                          llvm::errs() << "\n";
-
-template <class T>
-void DUMP_TOKEN_PTR(T tok, const char * end=" ") {
-  if (tok->isAnyIdentifier())
-    llvm::errs() << tok->getIdentifierInfo()->getName();
-  else
-    llvm::errs() << tok->getName();
-  llvm::errs() << end;
-}
-
-namespace {
-#ifdef DEBUG_PRINTS
-  std::list<Token> MACRO_STACK;
-#endif
-  inline int getArgNum(const Token &tok, const MacroInfo *holder) {
-    IdentifierInfo *II = tok.getIdentifierInfo();
-    return II ? holder->getArgumentNum(II) : -1;
-  }
-
-  inline bool tokenForbidsEpansion(const Token &tok) {
-    return tok.isOneOf(tok::hashhash, tok::hash);
-  }
-
-  inline bool isMacroName(const Token &tok, const Preprocessor &PP) {
-    IdentifierInfo *II = tok.getIdentifierInfo();
-    if (!II) return false;
-    const MacroInfo *m = PP.getMacroInfo(II);
-    if (!m) return false;
-    return m->isEnabled();
-  }
-
-  inline bool isObjectMacroName(const Token &tok, const Preprocessor &PP) {
-    IdentifierInfo *II = tok.getIdentifierInfo();
-    if (!II) return false;
-    const MacroInfo *m = PP.getMacroInfo(II);
-    if (!m) return false;
-    return m->isObjectLike() && m->isEnabled();
-  }
-
-  bool canExpandSomething(const Token* tokens, size_t tokNum, const Preprocessor &PP) {
-    for (size_t i = 0; i < tokNum; i++) {
-      const Token & CurTok = tokens[i];
-
-      if (CurTok.is(tok::hashhash))
-        return true;
-
-      if (isObjectMacroName(CurTok, PP))
-        return true;
-
-      if (isMacroName(CurTok, PP) && i + 1 != tokNum && tokens[i+1].is(tok::l_paren))
-        return true;
-    }
-    return false;
-  }
-}
 
 static Token t;
 static int counter = 0;
@@ -94,21 +30,13 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   // associated with it.
   destroy();
 
-#ifdef DEBUG_PRINTS
-  if (MI) {
-    MACRO_STACK.push_back(Tok);
-    //llvm::errs() << "expanding macro: ";
-    //DUMP_TOKEN_PTR(&Tok, "\n");
-  }
-#endif
   Macro = MI;
-  if (MI) {
-    MI->incExpandedTimes();
+  if (MI && PP.getPreprocessorOpts().NoMacroExpLocTracking) {
     counter++;
-    if (!PP.root) {
+    if (!PP.TopExpandingMacroToken) {
       assert(counter == 1);
       t = Tok;
-      PP.root = &t;
+      PP.TopExpandingMacroToken = &t;
     }
   }
 
@@ -125,35 +53,34 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   NumTokens = Macro->tokens_end()-Macro->tokens_begin();
   MacroExpansionStart = SourceLocation();
 
-  //llvm::errs() << "Enter token: ";
-  //DUMP_TOKEN_PTR(&Tok, "\n");
   SourceManager &SM = PP.getSourceManager();
   MacroStartSLocOffset = SM.getNextLocalOffset();
 
-  if (NumTokens > 0) {
+  if (NumTokens > 0 && !PP.getPreprocessorOpts().NoMacroExpLocTracking) {
     assert(Tokens[0].getLocation().isValid());
-   // assert((Tokens[0].getLocation().isFileID() || Tokens[0].is(tok::comment)) &&
-   //        "Macro defined in macro?");
+    assert((Tokens[0].getLocation().isFileID() || Tokens[0].is(tok::comment)) &&
+           "Macro defined in macro?");
     assert(ExpandLocStart.isValid());
 
     // Reserve a source location entry chunk for the length of the macro
     // definition. Tokens that get lexed directly from the definition will
     // have their locations pointing inside this chunk. This is to avoid
     // creating separate source location entries for each token.
-    MacroDefStart = SM.getExpansionLoc(Macro->tokens_begin()->getLocation());
+    MacroDefStart = SM.getExpansionLoc(Tokens[0].getLocation());
     MacroDefLength = Macro->getDefinitionLength(SM);
     MacroExpansionStart = SM.createExpansionLoc(MacroDefStart,
                                                 ExpandLocStart,
                                                 ExpandLocEnd,
                                                 MacroDefLength);
+  } else {
+    MacroDefLength = 0;
+    MacroDefStart = SourceLocation();
   }
 
   // If this is a function-like macro, expand the arguments and change
   // Tokens to point to the expanded tokens.
-  if (Macro->isFunctionLike() && Macro->getNumArgs()) {
-      ExpandFunctionArguments();
-  }
-
+  if (Macro->isFunctionLike() && Macro->getNumArgs())
+    ExpandFunctionArguments();
 
   // Mark the macro as currently disabled, so that it is not recursively
   // expanded.  The macro must be disabled only after argument pre-expansion of
@@ -170,6 +97,7 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   // If the client is reusing a TokenLexer, make sure to free any memory
   // associated with it.
   destroy();
+
   Macro = nullptr;
   ActualArgs = nullptr;
   Tokens = TokArray;
@@ -182,6 +110,7 @@ void TokenLexer::Init(const Token *TokArray, unsigned NumToks,
   HasLeadingSpace = false;
   NextTokGetsSpace = false;
   MacroExpansionStart = SourceLocation();
+
   // Set HasLeadingSpace/AtStartOfLine so that the first token will be
   // returned unmodified.
   if (NumToks != 0) {
@@ -207,14 +136,6 @@ void TokenLexer::destroy() {
 bool TokenLexer::MaybeRemoveCommaBeforeVaArgs(
     SmallVectorImpl<Token> &ResultToks, bool HasPasteOperator, MacroInfo *Macro,
     unsigned MacroArgNo, Preprocessor &PP) {
-
-#ifdef DEBUG_PRINTS
-  /*for (int i = 0; i < NumTokens; i++){
-    DUMP_TOKEN_PTR(Tokens + i);
-  }
-  llvm::errs() << "\n\n";*/
-#endif
-
   // Is the macro argument __VA_ARGS__?
   if (!Macro->isVariadic() || MacroArgNo != Macro->getNumArgs()-1)
     return false;
@@ -266,13 +187,11 @@ void TokenLexer::ExpandFunctionArguments() {
   // we install the newly expanded sequence as the new 'Tokens' list.
   bool MadeChange = false;
 
-  SmallVector<unsigned, 8> nonArgumentGuards;
   for (unsigned i = 0, e = NumTokens; i != e; ++i) {
     // If we found the stringify operator, get the argument stringified.  The
     // preprocessor already verified that the following token is a macro name
     // when the #define was parsed.
     const Token &CurTok = Tokens[i];
-
     if (i != 0 && !Tokens[i-1].is(tok::hashhash) && CurTok.hasLeadingSpace())
       NextTokGetsSpace = true;
 
@@ -280,11 +199,9 @@ void TokenLexer::ExpandFunctionArguments() {
       int ArgNo = Macro->getArgumentNum(Tokens[i+1].getIdentifierInfo());
       assert(ArgNo != -1 && "Token following # is not an argument?");
 
-      const Token * arg = ActualArgs->getUnexpArgument(ArgNo);
-
       SourceLocation ExpansionLocStart = CurTok.getLocation();
       SourceLocation ExpansionLocEnd = Tokens[i + 1].getLocation();
-      if (WITH_LOCATIONS) {
+      if (!PP.getPreprocessorOpts().NoMacroExpLocTracking) {
         ExpansionLocStart =
                 getExpansionLocForMacroDefLoc(CurTok.getLocation());
         ExpansionLocEnd =
@@ -292,13 +209,13 @@ void TokenLexer::ExpandFunctionArguments() {
       }
 
       Token Res;
-      if (CurTok.is(tok::hash))   // Stringify
+      if (CurTok.is(tok::hash))  // Stringify
         Res = ActualArgs->getStringifiedArgument(ArgNo, PP,
                                                  ExpansionLocStart,
                                                  ExpansionLocEnd);
       else {
         // 'charify': don't bother caching these.
-        Res = MacroArgs::StringifyArgument(arg,
+        Res = MacroArgs::StringifyArgument(ActualArgs->getUnexpArgument(ArgNo),
                                            PP, true,
                                            ExpansionLocStart,
                                            ExpansionLocEnd);
@@ -311,7 +228,6 @@ void TokenLexer::ExpandFunctionArguments() {
         Res.setFlag(Token::LeadingSpace);
 
       ResultToks.push_back(Res);
-
       MadeChange = true;
       ++i;  // Skip arg name.
       NextTokGetsSpace = false;
@@ -323,12 +239,12 @@ void TokenLexer::ExpandFunctionArguments() {
       !ResultToks.empty() && ResultToks.back().is(tok::hashhash);
     bool PasteBefore = i != 0 && Tokens[i-1].is(tok::hashhash);
     bool PasteAfter = i+1 != e && Tokens[i+1].is(tok::hashhash);
-    //assert(!NonEmptyPasteBefore || PasteBefore);
+    assert(!NonEmptyPasteBefore || PasteBefore);
 
     // Otherwise, if this is not an argument token, just add the token to the
     // output buffer.
     IdentifierInfo *II = CurTok.getIdentifierInfo();
-    int ArgNo = (II) ? Macro->getArgumentNum(II) : -1;
+    int ArgNo = II ? Macro->getArgumentNum(II) : -1;
     if (ArgNo == -1) {
       // This isn't an argument, just add it.
       ResultToks.push_back(CurTok);
@@ -352,10 +268,8 @@ void TokenLexer::ExpandFunctionArguments() {
     if (!PasteBefore && ActualArgs->isVarargsElidedUse() &&
         MaybeRemoveCommaBeforeVaArgs(ResultToks,
                                      /*HasPasteOperator=*/false,
-                                     Macro, ArgNo, PP)) {
+                                     Macro, ArgNo, PP))
       continue;
-    }
-
 
     // If it is not the LHS/RHS of a ## operator, we must pre-expand the
     // argument and substitute the expanded tokens into the result.  This is
@@ -366,26 +280,15 @@ void TokenLexer::ExpandFunctionArguments() {
       // Only preexpand the argument if it could possibly need it.  This
       // avoids some work in common cases.
       const Token *ArgTok = ActualArgs->getUnexpArgument(ArgNo);
-      if (ActualArgs->ArgNeedsPreexpansion(ArgTok, PP)) {
+      if (ActualArgs->ArgNeedsPreexpansion(ArgTok, PP))
         ResultArgToks = &ActualArgs->getPreExpArgument(ArgNo, Macro, PP)[0];
-      }
-      else {
+      else
         ResultArgToks = ArgTok;  // Use non-preexpanded tokens.
-      }
-
-
 
       // If the arg token expanded into anything, append it.
       if (ResultArgToks->isNot(tok::eof)) {
         unsigned FirstResult = ResultToks.size();
         unsigned NumToks = MacroArgs::getArgLength(ResultArgToks);
-
-#ifdef DEBUG_PRINTS
-     /*   llvm::errs() << "Substituted arg: \n";
-        for (int k = 0; k < NumToks; k++)
-          DUMP_TOKEN_PTR(ResultArgToks + k);
-        llvm::errs() << "\n\n";*/
-#endif
         ResultToks.append(ResultArgToks, ResultArgToks+NumToks);
 
         // In Microsoft-compatibility mode, we follow MSVC's preprocessing
@@ -393,22 +296,18 @@ void TokenLexer::ExpandFunctionArguments() {
         // expansions as argument separators. Set a flag on the token so we can
         // test for this later when the macro expansion is processed.
         if (PP.getLangOpts().MSVCCompat && NumToks == 1 &&
-            ResultToks.back().is(tok::comma)) {
+            ResultToks.back().is(tok::comma))
           ResultToks.back().setFlag(Token::IgnoredComma);
-        }
 
         // If the '##' came from expanding an argument, turn it into 'unknown'
         // to avoid pasting.
-
         for (unsigned i = FirstResult, e = ResultToks.size(); i != e; ++i) {
           Token &Tok = ResultToks[i];
-          if (Tok.is(tok::hashhash)) {
+          if (Tok.is(tok::hashhash))
             Tok.setKind(tok::unknown);
-          }
         }
-        // TODO understand if this info should go to cache
 
-        if(ExpandLocStart.isValid() && WITH_LOCATIONS) {
+        if(ExpandLocStart.isValid() && !PP.getPreprocessorOpts().NoMacroExpLocTracking) {
           updateLocForMacroArgTokens(CurTok.getLocation(),
                                      ResultToks.begin()+FirstResult,
                                      ResultToks.end());
@@ -427,7 +326,6 @@ void TokenLexer::ExpandFunctionArguments() {
     // Okay, we have a token that is either the LHS or RHS of a paste (##)
     // argument.  It gets substituted as its non-pre-expanded tokens.
     const Token *ArgToks = ActualArgs->getUnexpArgument(ArgNo);
-
     unsigned NumToks = MacroArgs::getArgLength(ArgToks);
     if (NumToks) {  // Not an empty argument?
       // If this is the GNU ", ## __VA_ARGS__" extension, and we just learned
@@ -450,15 +348,13 @@ void TokenLexer::ExpandFunctionArguments() {
       for (unsigned i = FirstResult, e = ResultToks.size();
              i != e; ++i) {
         Token &Tok = ResultToks[i];
-        //Tok.setLocation(CurTok.getLocation());
         if (Tok.is(tok::hashhash)) {
           if (i+1 == e || i == 0)
-            // keep this as hashhash if it should concat actual args later
-          Tok.setKind(tok::unknown); // but now it has one of the arguments unexpandable
+          Tok.setKind(tok::unknown);
         }
       }
 
-      if (ExpandLocStart.isValid() && WITH_LOCATIONS) {
+      if (ExpandLocStart.isValid() && !PP.getPreprocessorOpts().NoMacroExpLocTracking) {
         updateLocForMacroArgTokens(CurTok.getLocation(),
                                    ResultToks.end()-NumToks, ResultToks.end());
       }
@@ -473,9 +369,8 @@ void TokenLexer::ExpandFunctionArguments() {
       // assembler-with-cpp mode, invalid pastes are allowed through: in this
       // case, we do not want the extra whitespace to be added.  For example,
       // we want ". ## foo" -> ".foo" not ". foo".
-      if (NextTokGetsSpace) {
+      if (NextTokGetsSpace)
         ResultToks[ResultToks.size() - NumToks].setFlag(Token::LeadingSpace);
-      }
 
       NextTokGetsSpace = false;
       continue;
@@ -509,6 +404,7 @@ void TokenLexer::ExpandFunctionArguments() {
       MaybeRemoveCommaBeforeVaArgs(ResultToks,
                                    /*HasPasteOperator=*/true,
                                    Macro, ArgNo, PP);
+
     continue;
   }
 
@@ -517,17 +413,12 @@ void TokenLexer::ExpandFunctionArguments() {
     assert(!OwnsTokens && "This would leak if we already own the token list");
     // This is deleted in the dtor.
     NumTokens = ResultToks.size();
-
     // The tokens will be added to Preprocessor's cache and will be removed
     // when this TokenLexer finishes lexing them.
     Tokens = PP.cacheMacroExpandedTokens(this, ResultToks);
 
     // The preprocessor cache of macro expanded tokens owns these tokens,not us.
-    OwnsTokens = false; // what for?
-
-    /*for (auto iter = ResultToks.begin(); iter != ResultToks.end(); ++iter)
-      DUMP_TOKEN_PTR(iter);
-    llvm::errs() << "\n\n";*/
+    OwnsTokens = false;
   }
 }
 
@@ -548,14 +439,13 @@ bool TokenLexer::Lex(Token &Tok) {
     // that it is no longer being expanded.
 
     if (Macro) {
-      counter--;
-      if (counter == 0) {
-        PP.root = 0;
+      if (PP.getPreprocessorOpts().NoMacroExpLocTracking) {
+        counter--;
+        if (counter == 0) {
+          PP.TopExpandingMacroToken = nullptr;
+        }
       }
-
-      if (!Macro->isEnabled()) { // always true?!
-        Macro->EnableMacro();
-      }
+      Macro->EnableMacro();
     }
 
     Tok.startToken();
@@ -563,33 +453,22 @@ bool TokenLexer::Lex(Token &Tok) {
     Tok.setFlagValue(Token::LeadingSpace, HasLeadingSpace || NextTokGetsSpace);
     if (CurToken == 0)
       Tok.setFlag(Token::LeadingEmptyMacro);
-
-#ifdef DEBUG_PRINTS
-    if (Macro && !MACRO_STACK.empty()){
-      MACRO_STACK.pop_back();
-    }
-#endif
-    bool result = PP.HandleEndOfTokenLexer(Tok);
-    
-    return result;
+    return PP.HandleEndOfTokenLexer(Tok);
   }
+
+  SourceManager &SM = PP.getSourceManager();
+
   // If this is the first token of the expanded result, we inherit spacing
   // properties later.
   bool isFirstToken = CurToken == 0;
 
-
   // Get the next token to return.
   Tok = Tokens[CurToken++];
-
-  SourceManager &SM = PP.getSourceManager();
-
   bool TokenIsFromPaste = false;
-
-  bool canPasteTokens = !isAtEnd();
 
   // If this token is followed by a token paste (##) operator, paste the tokens!
   // Note that ## is a normal token when not expanding a macro.
-  if (canPasteTokens && Macro  &&
+  if (!isAtEnd() && Macro &&
       (Tokens[CurToken].is(tok::hashhash) ||
        // Special processing of L#x macros in -fms-compatibility mode.
        // Microsoft compiler is able to form a wide string literal from
@@ -598,40 +477,19 @@ bool TokenLexer::Lex(Token &Tok) {
         isWideStringLiteralFromMacro(Tok, Tokens[CurToken])))) {
     // When handling the microsoft /##/ extension, the final token is
     // returned by PasteTokens, not the pasted token.
-
-    //llvm::errs() << "pasting!\n";
-   // DUMP_TOKEN_PTR(&Tok);
-    //llvm::errs() << "\n";
-    bool result = PasteTokens(Tok);
-    if (result)
+    if (PasteTokens(Tok))
       return true;
 
     TokenIsFromPaste = true;
   }
-
-
-  // If this is the first token, set the lexical properties of the token to
-  // match the lexical properties of the macro identifier.
-  if (isFirstToken) {
-    Tok.setFlagValue(Token::StartOfLine , AtStartOfLine);
-    Tok.setFlagValue(Token::LeadingSpace, HasLeadingSpace);
-  } else {
-    // If this is not the first token, we may still need to pass through
-    // leading whitespace if we've expanded a macro.
-    if (AtStartOfLine) Tok.setFlag(Token::StartOfLine);
-    if (HasLeadingSpace) Tok.setFlag(Token::LeadingSpace);
-  }
-  AtStartOfLine = false;
-  HasLeadingSpace = false;
 
   // The token's current location indicate where the token was lexed from.  We
   // need this information to compute the spelling of the token, but any
   // diagnostics for the expanded token should appear as if they came from
   // ExpansionLoc.  Pull this information together into a new SourceLocation
   // that captures all of this.
-
-  // Don't do this for token streams. and for reading from cache
-  if (WITH_LOCATIONS && ExpandLocStart.isValid() &&
+  if (!PP.getPreprocessorOpts().NoMacroExpLocTracking
+      && ExpandLocStart.isValid() &&   // Don't do this for token streams.
       // Check that the token's location was not already set properly.
       SM.isBeforeInSLocAddrSpace(Tok.getLocation(), MacroStartSLocOffset)) {
     SourceLocation instLoc;
@@ -647,6 +505,19 @@ bool TokenLexer::Lex(Token &Tok) {
     Tok.setLocation(instLoc);
   }
 
+  // If this is the first token, set the lexical properties of the token to
+  // match the lexical properties of the macro identifier.
+  if (isFirstToken) {
+    Tok.setFlagValue(Token::StartOfLine , AtStartOfLine);
+    Tok.setFlagValue(Token::LeadingSpace, HasLeadingSpace);
+  } else {
+    // If this is not the first token, we may still need to pass through
+    // leading whitespace if we've expanded a macro.
+    if (AtStartOfLine) Tok.setFlag(Token::StartOfLine);
+    if (HasLeadingSpace) Tok.setFlag(Token::LeadingSpace);
+  }
+  AtStartOfLine = false;
+  HasLeadingSpace = false;
 
   // Handle recursive expansion!
   if (!Tok.isAnnotation() && Tok.getIdentifierInfo() != nullptr) {
@@ -662,9 +533,8 @@ bool TokenLexer::Lex(Token &Tok) {
       PP.HandlePoisonedIdentifier(Tok);
     }
 
-    if (!DisableMacroExpansion && II->isHandleIdentifierCase()) {
+    if (!DisableMacroExpansion && II->isHandleIdentifierCase())
       return PP.HandleIdentifier(Tok);
-    }
   }
   // Otherwise, return a normal token.
   return true;
@@ -704,7 +574,6 @@ bool TokenLexer::PasteTokens(Token &Tok) {
     const char *BufPtr = &Buffer[0];
     bool Invalid = false;
     unsigned LHSLen = PP.getSpelling(Tok, BufPtr, &Invalid);
-
     if (BufPtr != &Buffer[0])   // Really, we want the chars in Buffer!
       memcpy(&Buffer[0], BufPtr, LHSLen);
     if (Invalid)
@@ -712,8 +581,6 @@ bool TokenLexer::PasteTokens(Token &Tok) {
 
     BufPtr = Buffer.data() + LHSLen;
     unsigned RHSLen = PP.getSpelling(RHS, BufPtr, &Invalid);
-
-
     if (Invalid)
       return true;
     if (RHSLen && BufPtr != &Buffer[LHSLen])
@@ -832,8 +699,7 @@ bool TokenLexer::PasteTokens(Token &Tok) {
   // expanded from the full ## expression. Pull this information together into
   // a new SourceLocation that captures all of this.
   SourceManager &SM = PP.getSourceManager();
-
-  if (WITH_LOCATIONS) {
+  if (!PP.getPreprocessorOpts().NoMacroExpLocTracking) {
     if (StartLoc.isFileID())
       StartLoc = getExpansionLocForMacroDefLoc(StartLoc);
     if (EndLoc.isFileID())
@@ -869,18 +735,14 @@ bool TokenLexer::PasteTokens(Token &Tok) {
 /// 1, otherwise return 0.
 unsigned TokenLexer::isNextTokenLParen() const {
   // Out of tokens?
-  // TODO here need proper answer while using cache
-  if (isAtEnd()) {
+  if (isAtEnd())
     return 2;
-  }
-
   return Tokens[CurToken].is(tok::l_paren);
 }
 
 /// isParsingPreprocessorDirective - Return true if we are in the middle of a
 /// preprocessor directive.
 bool TokenLexer::isParsingPreprocessorDirective() const {
-  // TODO here need proper answer while using cache
   return Tokens[NumTokens-1].is(tok::eod) && !isAtEnd();
 }
 

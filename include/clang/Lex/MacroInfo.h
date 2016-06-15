@@ -28,7 +28,6 @@ class Module;
 class ModuleMacro;
 class Preprocessor;
 
-
 /// \brief Encapsulates the data about a macro definition (e.g. its tokens).
 ///
 /// There's an instance of this class for every #define.
@@ -112,17 +111,11 @@ class MacroInfo {
   /// \brief Whether this macro was used as header guard.
   bool UsedForHeaderGuard : 1;
 
-  size_t expanded;
-
-  llvm::SmallPtrSet<MacroInfo*, 8> DependingOnThisMIs;
-  llvm::SmallPtrSet<const IdentifierInfo*, 8> NonMacroInBodyIIs;
-
   // Only the Preprocessor gets to create and destroy these.
   MacroInfo(SourceLocation DefLoc);
-  ~MacroInfo();
+  ~MacroInfo() = default;
 
 public:
-
   /// \brief Return the location that the macro was defined at.
   SourceLocation getDefinitionLoc() const { return Location; }
 
@@ -256,18 +249,8 @@ public:
     ReplacementTokens.push_back(Tok);
   }
 
-
-  // andy
-  size_t expandedTimes() const {
-    return expanded;
-  }
-
-  size_t incExpandedTimes() {
-    return ++expanded;
-  }
-
-  typedef llvm::SmallPtrSet<MacroInfo*, 8>::const_iterator depends_iterator;
-
+  /// \brief Return true if this macro is enabled.
+  ///
   /// In other words, that we are not currently in an expansion of this macro.
   bool isEnabled() const { return !IsDisabled; }
 
@@ -430,8 +413,6 @@ public:
 
   static bool classof(const MacroDirective *) { return true; }
 };
-
-
 
 /// \brief A directive for a defined macro or a macro imported from a module.
 class DefMacroDirective : public MacroDirective {

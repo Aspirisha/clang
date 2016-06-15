@@ -87,8 +87,6 @@ public:
                                 // macro stringizing or charizing operator.
   };
 
-  Token() { }
-
   tok::TokenKind getKind() const { return Kind; }
   void setKind(tok::TokenKind K) { Kind = K; }
 

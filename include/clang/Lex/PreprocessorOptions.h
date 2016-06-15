@@ -55,6 +55,8 @@ public:
   /// definitions and expansions.
   unsigned DetailedRecord : 1;
 
+  bool NoMacroExpLocTracking;
+
   /// The implicit PCH included at the start of the translation unit, or empty.
   std::string ImplicitPCHInclude;
 

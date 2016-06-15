@@ -30,9 +30,7 @@ MacroInfo::MacroInfo(SourceLocation DefLoc)
     IsAllowRedefinitionsWithoutWarning(false),
     IsWarnIfUnused(false),
     FromASTFile(false),
-    UsedForHeaderGuard(false),
-    expanded(0)
-{
+    UsedForHeaderGuard(false) {
 }
 
 unsigned MacroInfo::getDefinitionLengthSlow(SourceManager &SM) const {
@@ -244,8 +242,4 @@ ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
       sizeof(ModuleMacro) + sizeof(ModuleMacro *) * Overrides.size(),
       llvm::alignOf<ModuleMacro>());
   return new (Mem) ModuleMacro(OwningModule, II, Macro, Overrides);
-}
-
-MacroInfo::~MacroInfo() {
-  //llvm::errs() << "Deleting MacroInfo ";
 }

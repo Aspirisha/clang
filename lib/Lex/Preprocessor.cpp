@@ -79,7 +79,7 @@ Preprocessor::Preprocessor(IntrusiveRefCntPtr<PreprocessorOptions> PPOpts,
   OwnsHeaderSearch = OwnsHeaders;
 
   CounterValue = 0; // __COUNTER__ starts at 0.
-  root = 0;
+  TopExpandingMacroToken = 0;
 
   // Clear stats.
   NumDirectives = NumDefined = NumUndefined = NumPragma = 0;
@@ -661,9 +661,8 @@ bool Preprocessor::HandleIdentifier(Token &Identifier) {
       if (!Identifier.isExpandDisabled() && MI->isEnabled()) {
         // C99 6.10.3p10: If the preprocessing token immediately after the
         // macro name isn't a '(', this macro should not be expanded.
-        if (!MI->isFunctionLike() || isNextPPTokenLParen()) {
+        if (!MI->isFunctionLike() || isNextPPTokenLParen())
           return HandleMacroExpandedIdentifier(Identifier, MD);
-        }
       } else {
         // C99 6.10.3.4p2 says that a disabled macro may never again be
         // expanded, even if it's in a context where it could be expanded in the
