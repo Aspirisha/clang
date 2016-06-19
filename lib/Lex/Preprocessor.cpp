@@ -79,7 +79,7 @@ Preprocessor::Preprocessor(IntrusiveRefCntPtr<PreprocessorOptions> PPOpts,
   OwnsHeaderSearch = OwnsHeaders;
 
   CounterValue = 0; // __COUNTER__ starts at 0.
-  TopExpandingMacroToken = 0;
+  TopExpandingMacroToken = nullptr;
 
   // Clear stats.
   NumDirectives = NumDefined = NumUndefined = NumPragma = 0;

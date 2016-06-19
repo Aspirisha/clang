@@ -55,7 +55,7 @@ public:
   /// definitions and expansions.
   unsigned DetailedRecord : 1;
 
-  bool NoMacroExpLocTracking;
+  unsigned MacroExplocDepthLimit;
 
   /// The implicit PCH included at the start of the translation unit, or empty.
   std::string ImplicitPCHInclude;
@@ -143,6 +143,7 @@ public:
 
 public:
   PreprocessorOptions() : UsePredefines(true), DetailedRecord(false),
+                          MacroExplocDepthLimit(-1), // no limit by default
                           DisablePCHValidation(false),
                           AllowPCHWithCompilerErrors(false),
                           DumpDeserializedPCHDecls(false),

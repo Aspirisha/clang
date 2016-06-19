@@ -2279,7 +2279,6 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
           !MI->isIdenticalTo(*OtherMI, *this,
                              /*Syntactic=*/LangOpts.MicrosoftExt)) {
         Diag(MI->getDefinitionLoc(), diag::warn_pp_objc_macro_redef_ignored);
-
       }
       assert(!OtherMI->isWarnIfUnused());
       return;
@@ -2345,7 +2344,6 @@ void Preprocessor::HandleUndefDirective(Token &UndefTok) {
   // Okay, we have a valid identifier to undef.
   auto *II = MacroNameTok.getIdentifierInfo();
   auto MD = getMacroDefinition(II);
-
 
   // If the callbacks want to know, tell them about the macro #undef.
   // Note: no matter if the macro was defined or not.

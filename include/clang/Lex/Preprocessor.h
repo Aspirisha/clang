@@ -651,10 +651,10 @@ public:
                TranslationUnitKind TUKind = TU_Complete);
   ~Preprocessor();
 
-  // If we are currently expanding some macro and expansion location tracking
-  // is switched off (-no-macro-exploc-tracking), it points to a top-level macro
+  // If we are currently expanding some macro, it points to a top-level macro
   // token that is currently being expanded.
-  // It is used to compute proper __LINE__ information
+  // It is used to compute proper __LINE__ information when expansion depth
+  // is greater than one set up with --macro-exploc-depth
   Token *TopExpandingMacroToken;
 
   /// \brief Initialize the preprocessor using information about the target.

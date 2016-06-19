@@ -20,8 +20,8 @@
 #include "clang/Lex/PreprocessorOptions.h"
 using namespace clang;
 
-static Token t;
-static int counter = 0;
+static Token MacroExpansionRoot;
+static unsigned CurrentDepth = 0;
 /// Create a TokenLexer for the specified macro with the specified actual
 /// arguments.  Note that this ctor takes ownership of the ActualArgs pointer.
 void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
@@ -31,12 +31,12 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   destroy();
 
   Macro = MI;
-  if (MI && PP.getPreprocessorOpts().NoMacroExpLocTracking) {
-    counter++;
+  if (MI && PP.getPreprocessorOpts().MacroExplocDepthLimit != -1) {
+    CurrentDepth++;
     if (!PP.TopExpandingMacroToken) {
-      assert(counter == 1);
-      t = Tok;
-      PP.TopExpandingMacroToken = &t;
+      assert(CurrentDepth == 1);
+      MacroExpansionRoot = Tok;
+      PP.TopExpandingMacroToken = &MacroExpansionRoot;
     }
   }
 
@@ -56,7 +56,7 @@ void TokenLexer::Init(Token &Tok, SourceLocation ELEnd, MacroInfo *MI,
   SourceManager &SM = PP.getSourceManager();
   MacroStartSLocOffset = SM.getNextLocalOffset();
 
-  if (NumTokens > 0 && !PP.getPreprocessorOpts().NoMacroExpLocTracking) {
+  if (NumTokens > 0 && (CurrentDepth <= PP.getPreprocessorOpts().MacroExplocDepthLimit)) {
     assert(Tokens[0].getLocation().isValid());
     assert((Tokens[0].getLocation().isFileID() || Tokens[0].is(tok::comment)) &&
            "Macro defined in macro?");
@@ -201,7 +201,7 @@ void TokenLexer::ExpandFunctionArguments() {
 
       SourceLocation ExpansionLocStart = CurTok.getLocation();
       SourceLocation ExpansionLocEnd = Tokens[i + 1].getLocation();
-      if (!PP.getPreprocessorOpts().NoMacroExpLocTracking) {
+      if (CurrentDepth <= PP.getPreprocessorOpts().MacroExplocDepthLimit) {
         ExpansionLocStart =
                 getExpansionLocForMacroDefLoc(CurTok.getLocation());
         ExpansionLocEnd =
@@ -307,7 +307,7 @@ void TokenLexer::ExpandFunctionArguments() {
             Tok.setKind(tok::unknown);
         }
 
-        if(ExpandLocStart.isValid() && !PP.getPreprocessorOpts().NoMacroExpLocTracking) {
+        if(ExpandLocStart.isValid() && (CurrentDepth <= PP.getPreprocessorOpts().MacroExplocDepthLimit)) {
           updateLocForMacroArgTokens(CurTok.getLocation(),
                                      ResultToks.begin()+FirstResult,
                                      ResultToks.end());
@@ -354,7 +354,7 @@ void TokenLexer::ExpandFunctionArguments() {
         }
       }
 
-      if (ExpandLocStart.isValid() && !PP.getPreprocessorOpts().NoMacroExpLocTracking) {
+      if (ExpandLocStart.isValid() && (CurrentDepth <= PP.getPreprocessorOpts().MacroExplocDepthLimit)) {
         updateLocForMacroArgTokens(CurTok.getLocation(),
                                    ResultToks.end()-NumToks, ResultToks.end());
       }
@@ -439,9 +439,9 @@ bool TokenLexer::Lex(Token &Tok) {
     // that it is no longer being expanded.
 
     if (Macro) {
-      if (PP.getPreprocessorOpts().NoMacroExpLocTracking) {
-        counter--;
-        if (counter == 0) {
+      if (CurrentDepth != 0) {
+        CurrentDepth--;
+        if (CurrentDepth == 0) {
           PP.TopExpandingMacroToken = nullptr;
         }
       }
@@ -488,7 +488,7 @@ bool TokenLexer::Lex(Token &Tok) {
   // diagnostics for the expanded token should appear as if they came from
   // ExpansionLoc.  Pull this information together into a new SourceLocation
   // that captures all of this.
-  if (!PP.getPreprocessorOpts().NoMacroExpLocTracking
+  if ((CurrentDepth <= PP.getPreprocessorOpts().MacroExplocDepthLimit)
       && ExpandLocStart.isValid() &&   // Don't do this for token streams.
       // Check that the token's location was not already set properly.
       SM.isBeforeInSLocAddrSpace(Tok.getLocation(), MacroStartSLocOffset)) {
@@ -699,7 +699,7 @@ bool TokenLexer::PasteTokens(Token &Tok) {
   // expanded from the full ## expression. Pull this information together into
   // a new SourceLocation that captures all of this.
   SourceManager &SM = PP.getSourceManager();
-  if (!PP.getPreprocessorOpts().NoMacroExpLocTracking) {
+  if (CurrentDepth <= PP.getPreprocessorOpts().MacroExplocDepthLimit) {
     if (StartLoc.isFileID())
       StartLoc = getExpansionLocForMacroDefLoc(StartLoc);
     if (EndLoc.isFileID())
