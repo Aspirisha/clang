@@ -807,7 +807,7 @@ bool Preprocessor::EvaluateDirectiveExpression(IdentifierInfo *&IfNDefMacro) {
   // expression.
   bool DisableMacroExpansionAtStartOfDirective = DisableMacroExpansion;
   DisableMacroExpansion = false;
-  
+
   // Peek ahead one token.
   Token Tok;
   LexNonComment(Tok);
